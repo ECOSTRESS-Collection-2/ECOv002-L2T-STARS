@@ -18,10 +18,6 @@ NASA Jet Propulsion Laboratory 397K
 [kerry-anne.cawse-nicholson@jpl.nasa.gov](mailto:kerry-anne.cawse-nicholson@jpl.nasa.gov)<br>
 NASA Jet Propulsion Laboratory 329G
 
-[Madeleine Pascolini-Campbell](https://github.com/madeleinepc) (she/her)<br>
-[madeleine.a.pascolini-campbell@jpl.nasa.gov](mailto:madeleine.a.pascolini-campbell@jpl.nasa.gov)<br>
-NASA Jet Propulsion Laboratory 329F
-
 [Claire Villanueva-Weeks](https://github.com/clairesvw) (she/her)<br>
 [claire.s.villanueva-weeks@jpl.nasa.gov](mailto:claire.s.villanueva-weeks@jpl.nasa.gov)<br>
 NASA Jet Propulsion Laboratory 329G
