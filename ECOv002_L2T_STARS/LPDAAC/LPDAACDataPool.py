@@ -29,7 +29,10 @@ from pycksum import cksum
 import colored_logging as cl
 
 from ..exit_codes import DownloadFailed
-from ..DAAC.HTTP import CONNECTION_CLOSE
+
+CONNECTION_CLOSE = {
+    "Connection": "close",
+}
 
 DEFAULT_REMOTE = "https://e4ftl01.cr.usgs.gov"
 RETRIES = 6
