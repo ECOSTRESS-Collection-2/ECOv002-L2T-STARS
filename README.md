@@ -1,5 +1,4 @@
-# ECOv002_L2T_STARS
-ECOSTRESS Collection 2 STARS Data Fusion Product Generating Executable (PGE)
+# ECOSTRESS Collection 2 STARS Data Fusion Product Generating Executable (PGE)
 
 This software package has been refactored from the [ECOSTRESS Collection 2 Gridded & Tiled Products Generator](https://github.com/ECOSTRESS-Collection-2/ECOSTRESS-Collection-2) as an independent product pipeline for the ECOSTRESS Collection 2 STARS data fusion product. This software package will serve as an ECOSTRESS Collection 2 reference for the development of the [ECOSTRESS Collection 3 STARS PGE](https://github.com/ECOSTRESS-Collection-3/ECOv003-L2T-STARS) and the [SBG Collection 1 JET PGE](https://github.com/sbg-tir/SBG-TIR-L2-STARS).
 
