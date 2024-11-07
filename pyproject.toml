@@ -37,6 +37,7 @@ dependencies = [
     "rasters",
     "scikit-learn",
     "scipy",
+    "sentinel-tiles",
     "six",
     "tensorflow",
     "untangle",
@@ -52,10 +53,10 @@ dev = [
 ]
 
 [tool.setuptools.package-data]
-ECOv002_L2T_JET = ["*.txt"]
+ECOv002_L2T_STARS = ["*.txt"]
 
 [project.urls]
-"Homepage" = "https://github.com/ECOSTRESS-Collection-2/ECOv002_L3T_L4T_JET"
+"Homepage" = "https://github.com/ECOSTRESS-Collection-2/ECOv002_L2T_STARS"
 
 [tool.setuptools.packages.find]
 include = ["ECOv002_L2T_JET"]
