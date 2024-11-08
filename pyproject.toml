@@ -19,6 +19,7 @@ dependencies = [
     "pandas",
     "pillow",
     "geopandas",
+    "geos5fp",
     "harmonized-landsat-sentinel>=1.1.0",
     "h5py",
     "matplotlib",
