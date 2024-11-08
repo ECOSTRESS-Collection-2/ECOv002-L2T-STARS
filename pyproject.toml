@@ -23,6 +23,7 @@ dependencies = [
     "harmonized-landsat-sentinel>=1.1.0",
     "h5py",
     "matplotlib",
+    "modland",
     "msgpack",
     "msgpack_numpy",
     "netCDF4",
