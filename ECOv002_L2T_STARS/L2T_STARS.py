@@ -6,52 +6,40 @@ import sys
 import urllib
 from datetime import datetime, timedelta, date
 from glob import glob
-from os import makedirs, system, remove
+from os import makedirs, remove
 from os.path import join, abspath, dirname, expanduser, exists, basename
 from shutil import which
-from traceback import format_exception
 from typing import Union
 from uuid import uuid4
 
+import colored_logging as cl
 import numpy as np
 import pandas as pd
+import rasters as rt
 from dateutil import parser
 from dateutil.rrule import rrule, DAILY
+from rasters import Raster, RasterGeometry
 from scipy import stats
 
-import colored_logging as cl
+from harmonized_landsat_sentinel import HLSLandsatMissing, HLSSentinelMissing, HLS
+from harmonized_landsat_sentinel import HLSTileNotAvailable, HLSSentinelNotAvailable, HLSLandsatNotAvailable, HLSDownloadFailed, HLSNotAvailable
+from harmonized_landsat_sentinel import HLSBandNotAcquired, HLS2CMR, CMR_SEARCH_URL
 
-import rasters as rt
-from rasters import Raster, RasterGeometry
+from .ECOSTRESS_colors import NDVI_COLORMAP, ALBEDO_COLORMAP
 
-from .PGEVersion import PGEVersion
-
-from .ecostress_cmr import CMRServerUnreachable
-
-from .HLS import HLSLandsatMissing, HLSSentinelMissing, HLS
-from .HLS import HLSTileNotAvailable, HLSSentinelNotAvailable, HLSLandsatNotAvailable, HLSDownloadFailed, HLSNotAvailable
-from .HLS.HLS2 import HLSBandNotAcquired, HLS2CMR, CMR_SEARCH_URL
+from .L2TLSTE import L2TLSTE
+from .L2TSTARS import L2TSTARS
 from .LPDAAC.LPDAACDataPool import LPDAACServerUnreachable
-from .MODLAND import find_MODLAND_tiles
-
+from .PGEVersion import PGEVersion
 from .VIIRS import VIIRSDownloaderAlbedo, VIIRSDownloaderNDVI
-from .VIIRS.VNP09GA import VNP09GA, VIIRSUnavailableError
 from .VIIRS.VNP43IA4 import VNP43IA4
 from .VIIRS.VNP43MA3 import VNP43MA3
 from .VNP43NRT import VNP43NRT
-
 from .daterange import get_date
-from .timer import Timer
-from .L2TLSTE import L2TLSTE
-from .L2TSTARS import L2TSTARS
-from .exit_codes import ANCILLARY_LATENCY, LAND_FILTER, SUCCESS_EXIT_CODE, ECOSTRESSExitCodeException, \
-    UnableToParseRunConfig, \
-    MissingRunConfigValue, RUNCONFIG_FILENAME_NOT_SUPPLIED, AncillaryServerUnreachable, AncillaryLatency, LandFilter, \
-    InputFilesInaccessible, DownloadFailed, ANCILLARY_SERVER_UNREACHABLE, BlankOutput, DOWNLOAD_FAILED, \
-    UNCLASSIFIED_FAILURE_EXIT_CODE
+from .ecostress_cmr import CMRServerUnreachable
+from .exit_codes import *
 from .runconfig import ECOSTRESSRunConfig
-from .ECOSTRESS_colors import NDVI_COLORMAP, ALBEDO_COLORMAP
-
+from .timer import Timer
 
 with open(join(abspath(dirname(__file__)), "version.txt")) as f:
     version = f.read()
@@ -90,6 +78,7 @@ L2T_STARS_SHORT_NAME = "ECO_L2T_STARS"
 L2T_STARS_LONG_NAME = "ECOSTRESS Tiled Ancillary NDVI and Albedo L2 Global 70 m"
 
 logger = logging.getLogger(__name__)
+
 
 class Prior:
     def __init__(
@@ -451,6 +440,7 @@ class L2TSTARSConfig(ECOSTRESSRunConfig):
             raise UnableToParseRunConfig(
                 f"unable to parse run-config file: {filename}")
 
+
 def generate_filename(directory: str, variable: str, date_UTC: Union[date, str], tile: str, cell_size: int) -> str:
     if isinstance(date_UTC, str):
         date_UTC = parser.parse(date_UTC).date()
@@ -463,6 +453,7 @@ def generate_filename(directory: str, variable: str, date_UTC: Union[date, str],
     makedirs(dirname(filename), exist_ok=True)
 
     return filename
+
 
 def calibrate_fine_to_coarse(fine_image: Raster, coarse_image: Raster) -> Raster:
     aggregated_image = fine_image.to_geometry(coarse_image.geometry, resampling="average")
@@ -480,11 +471,13 @@ def calibrate_fine_to_coarse(fine_image: Raster, coarse_image: Raster) -> Raster
 
     return calibrated_image
 
+
 def generate_NDVI_coarse_image(date_UTC: Union[date, str], VIIRS_connection: VIIRSDownloaderNDVI, geometry: RasterGeometry = None) -> Raster:
     coarse_image = VIIRS_connection.NDVI(date_UTC=date_UTC, geometry=geometry)
     coarse_image = rt.where(coarse_image == 0, np.nan, coarse_image)
 
     return coarse_image
+
 
 def generate_NDVI_fine_image(date_UTC: Union[date, str], tile: str, HLS_connection: HLS) -> Raster:
     fine_image = HLS_connection.NDVI(tile=tile, date_UTC=date_UTC)
@@ -492,11 +485,13 @@ def generate_NDVI_fine_image(date_UTC: Union[date, str], tile: str, HLS_connecti
 
     return fine_image
 
+
 def generate_albedo_coarse_image(date_UTC: Union[date, str], VIIRS_connection: VIIRSDownloaderAlbedo, geometry: RasterGeometry = None) -> Raster:
     coarse_image = VIIRS_connection.albedo(date_UTC=date_UTC, geometry=geometry)
     coarse_image = rt.where(coarse_image == 0, np.nan, coarse_image)
 
     return coarse_image
+
 
 def generate_albedo_fine_image(date_UTC: Union[date, str], tile: str, HLS_connection: HLS) -> Raster:
     fine_image = HLS_connection.albedo(tile=tile, date_UTC=date_UTC)
@@ -504,23 +499,29 @@ def generate_albedo_fine_image(date_UTC: Union[date, str], tile: str, HLS_connec
 
     return fine_image
 
+
 def generate_input_staging_directory(input_staging_directory: str, tile: str, prefix: str) -> str:
     directory = join(input_staging_directory, f"{prefix}_{tile}")
     makedirs(directory, exist_ok=True)
 
     return directory
 
+
 def generate_NDVI_coarse_directory(input_staging_directory: str, tile: str) -> str:
     return generate_input_staging_directory(input_staging_directory, tile, "NDVI_coarse")
+
 
 def generate_NDVI_fine_directory(input_staging_directory: str, tile: str) -> str:
     return generate_input_staging_directory(input_staging_directory, tile, "NDVI_fine")
 
+
 def generate_albedo_coarse_directory(input_staging_directory: str, tile: str) -> str:
     return generate_input_staging_directory(input_staging_directory, tile, "albedo_coarse")
 
+
 def generate_albedo_fine_directory(input_staging_directory: str, tile: str) -> str:
     return generate_input_staging_directory(input_staging_directory, tile, "albedo_fine")
+
 
 def generate_output_directory(working_directory: str, date_UTC: Union[date, str], tile: str) -> str:
     if isinstance(date_UTC, str):
@@ -531,6 +532,7 @@ def generate_output_directory(working_directory: str, date_UTC: Union[date, str]
 
     return directory
 
+
 def generate_model_state_tile_date_directory(model_directory: str, tile: str, date_UTC: Union[date, str]) -> str:
     if isinstance(date_UTC, str):
         date_UTC = parser.parse(date_UTC).date()
@@ -539,6 +541,7 @@ def generate_model_state_tile_date_directory(model_directory: str, tile: str, da
     makedirs(directory, exist_ok=True)
 
     return directory
+
 
 # def process_julia_data_fusion_no_prior(
 #         tile: str,
@@ -591,6 +594,7 @@ def process_julia_data_fusion(
     # system(command)
     subprocess.run(command, shell=True)
 
+
 def retrieve_STARS_sources(
         tile: str,
         geometry: RasterGeometry,
@@ -633,6 +637,7 @@ def retrieve_STARS_sources(
         end_date=VIIRS_end_date,
         geometry=geometry,
     )
+
 
 def generate_STARS_inputs(
         tile: str,
@@ -763,6 +768,7 @@ def generate_STARS_inputs(
 
     if len(coarse_latency_dates) > 0:
         raise AncillaryLatency(f"missing coarse dates within {VIIRS_GIVEUP_DAYS}-day window: {', '.join([str(d) for d in coarse_latency_dates])}")
+
 
 def load_prior(
         tile: str,
@@ -934,6 +940,7 @@ def load_prior(
     )
 
     return prior
+
 
 def process_STARS_product(
         tile: str,
@@ -1302,6 +1309,7 @@ def process_STARS_product(
         if exists(posterior_albedo_UQ_filename):
             logger.info(f"removing albedo UQ posterior: {posterior_albedo_UQ_filename}")
             remove(posterior_albedo_UQ_filename)
+
 
 def L2T_STARS(
         runconfig_filename: str,
