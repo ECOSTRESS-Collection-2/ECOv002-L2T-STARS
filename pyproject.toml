@@ -15,12 +15,15 @@ classifiers = [
     "Operating System :: OS Independent",
 ]
 dependencies = [
-    "colored_logging",
+    "colored-logging",
     "pandas",
     "pillow",
     "geopandas",
+    "geos5fp",
+    "harmonized-landsat-sentinel>=1.1.0",
     "h5py",
     "matplotlib",
+    "modland",
     "msgpack",
     "msgpack_numpy",
     "netCDF4",

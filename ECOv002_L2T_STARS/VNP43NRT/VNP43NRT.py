@@ -17,10 +17,10 @@ import colored_logging as cl
 
 import rasters
 from rasters import Raster, RasterGeometry, Point, Polygon
+from geos5fp import GEOS5FP, FailedGEOS5FPDownload
 
 from ..BRDF import bidirectional_reflectance
 from ..BRDF.SZA import calculate_SZA
-from ..GEOS5FP import GEOS5FP, FailedGEOS5FPDownload
 from ..MODLAND import find_MODLAND_tiles
 from ..MODLAND.indices import parsehv, generate_MODLAND_grid
 from ..VIIRS import VIIRSDownloaderAlbedo, VIIRSDownloaderNDVI

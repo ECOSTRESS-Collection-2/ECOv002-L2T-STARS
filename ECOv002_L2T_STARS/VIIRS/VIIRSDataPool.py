@@ -8,23 +8,25 @@ from os.path import basename, splitext, abspath, expanduser
 from os.path import join
 from typing import List, Union
 
+import colored_logging as cl
 import h5py
 import numpy as np
 import pandas as pd
-from daterange import date_range
+import rasters as rt
+
 from dateutil import parser
-from dateutil.rrule import rrule, DAILY
 from shapely.geometry import Point, Polygon
 
-import colored_logging as cl
-import rasters as rt
 from rasters import RasterGrid, Raster
 
+from modland import find_modland_tiles, generate_modland_grid, parsehv
+
+from ..daterange import date_range
 from ..LPDAAC import LPDAACDataPool
-from ..MODLAND import find_MODLAND_tiles
-from ..MODLAND.indices import generate_MODLAND_grid, parsehv
+
 
 logger = logging.getLogger(__name__)
+
 
 def parse_VIIRS_product(filename: str) -> str:
     return str(basename(filename).split(".")[0])
@@ -44,6 +46,7 @@ def parse_VIIRS_build(filename: str) -> int:
 
 DEFAULT_WORKING_DIRECTORY = "."
 DEFAULT_PRODUCTS_DIRECTORY = "VIIRS_products"
+
 
 class VIIRSGranule:
     CLOUD_DATASET_NAME = "HDFEOS/GRIDS/VNP_Grid_1km_2D/Data Fields/SurfReflect_QF1_1"
@@ -126,7 +129,7 @@ class VIIRSGranule:
 
         with h5py.File(filename, "r") as f:
             DN = np.array(f[dataset_name])
-            grid = generate_MODLAND_grid(h, v, DN.shape[0])
+            grid = generate_modland_grid(h, v, DN.shape[0])
             logger.info(f"opening VIIRS file: {cl.file(self.filename)}")
             logger.info(f"loading {cl.val(dataset_name)} at {cl.val(f'{grid.cell_size:0.2f} m')} resolution")
             DN = Raster(DN, geometry=grid)
@@ -223,7 +226,7 @@ class VIIRSDataPool(LPDAACDataPool):
             *args,
             **kwargs) -> pd.DataFrame:
         if tiles is None and target_geometry is not None:
-            tiles = find_MODLAND_tiles(target_geometry)
+            tiles = find_modland_tiles(target_geometry)
 
         if isinstance(tiles, str):
             tiles = [tiles]
