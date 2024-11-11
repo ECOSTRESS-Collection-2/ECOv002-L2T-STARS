@@ -6,12 +6,12 @@ from dateutil import parser
 import h5py
 import numpy as np
 import pandas as pd
-from MODLAND import find_MODLAND_tiles
+from modland import find_modland_tiles
 from shapely.geometry import Point, Polygon
 
 import colored_logging as cl
 import rasters as rt
-from MODLAND.indices import generate_MODLAND_grid
+from modland import generate_modland_grid
 from rasters import Raster, RasterGrid, RasterGeometry
 
 from .VIIRSDownloader import VIIRSDownloaderNDVI
@@ -88,7 +88,7 @@ class VNP43IA4Granule(VIIRSGranule):
             with h5py.File(self.filename, "r") as f:
                 image = np.array(f[dataset_name])
                 h, v = self.hv
-                grid = generate_MODLAND_grid(h, v, image.shape[0])
+                grid = generate_modland_grid(h, v, image.shape[0])
                 logger.info(f"opening file: {cl.file(self.filename)}")
                 logger.info(f"loading {cl.val(dataset_name)} at {cl.val(f'{grid.cell_size:0.2f} m')} resolution")
                 image = Raster(image, geometry=grid)
@@ -249,7 +249,7 @@ class VNP43IA4(VIIRSDataPool, VIIRSDownloaderNDVI):
         if filename is not None and exists(filename):
             return Raster.open(filename)
 
-        tiles = sorted(find_MODLAND_tiles(geometry.boundary_latlon.geometry))
+        tiles = sorted(find_modland_tiles(geometry.boundary_latlon.geometry))
 
         if len(tiles) == 0:
             raise ValueError("no VIIRS tiles found covering target geometry")
