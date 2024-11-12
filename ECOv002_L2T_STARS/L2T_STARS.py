@@ -4,7 +4,7 @@ import socket
 import subprocess
 import sys
 import urllib
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from glob import glob
 from os import makedirs, remove
 from os.path import join, abspath, dirname, expanduser, exists, basename
@@ -128,8 +128,7 @@ def generate_L2T_STARS_runconfig(
         instance_ID: str = None,
         product_counter: int = None,
         template_filename: str = None) -> str:
-    logger.info(
-        f"started generating L2T_STARS run-config for orbit {cl.val(orbit)} scene {cl.val(scene)}")
+
     timer = Timer()
 
     L2T_LSTE_granule = L2TLSTE(L2T_LSTE_filename)
@@ -149,8 +148,14 @@ def generate_L2T_STARS_runconfig(
     if build is None:
         build = DEFAULT_BUILD
 
-    pattern = join(working_directory,
-                   f"ECOv002_L2T_STARS_{orbit:05d}_{scene:03d}_{tile}_*_{build}_*.xml")
+    if working_directory is None:
+        working_directory = "."
+
+    date_UTC = time_UTC.date()
+
+    logger.info(f"started generating L2T_STARS run-config for tile {tile} on date {date_UTC}")
+
+    pattern = join(working_directory, f"ECOv002_L2T_STARS_{tile}_*_{build}_*.xml")
     logger.info(f"scanning for previous run-configs: {cl.val(pattern)}")
     previous_runconfigs = glob(pattern)
     previous_runconfig_count = len(previous_runconfigs)
@@ -169,13 +174,13 @@ def generate_L2T_STARS_runconfig(
     template_filename = abspath(expanduser(template_filename))
 
     if production_datetime is None:
-        production_datetime = datetime.utcnow()
+        production_datetime = datetime.now(timezone.utc)
 
     if product_counter is None:
         product_counter = 1
 
     timestamp = f"{time_UTC:%Y%m%d}"
-    granule_ID = f"ECOv002_L2T_STARS_{orbit:05d}_{scene:03d}_{tile}_{timestamp}_{build}_{product_counter:02d}"
+    granule_ID = f"ECOv002_L2T_STARS_{tile}_{timestamp}_{build}_{product_counter:02d}"
 
     if runconfig_filename is None:
         runconfig_filename = join(
@@ -541,26 +546,64 @@ def generate_model_state_tile_date_directory(model_directory: str, tile: str, da
 
     return directory
 
+def install_STARS_jl(
+    github_URL: str = "https://github.com/STARS-Data-Fusion/STARS.jl",
+    environment_name: str = "@ECOv002-L2T-STARS"):
+    """
+    Installs the STARS.jl package from GitHub into a specified environment.
 
-# def process_julia_data_fusion_no_prior(
-#         tile: str,
-#         coarse_cell_size: int,
-#         fine_cell_size: int,
-#         VIIRS_start_date: date,
-#         VIIRS_end_date: date,
-#         HLS_start_date: date,
-#         HLS_end_date: date,
-#         coarse_directory: str,
-#         fine_directory: str,
-#         posterior_filename: str,
-#         posterior_UQ_filename: str,
-#         posterior_bias_filename: str,
-#         posterior_bias_UQ_filename: str):
-#     julia_script_filename = join(abspath(dirname(__file__)), "process_ECOSTRESS_data_fusion.jl")
-#     STARS_source_directory = join(abspath(dirname(__file__)), "..", "STARS_jl")
-#     command = f'cd "{STARS_source_directory}" && julia --project=@. "{julia_script_filename}" "{tile}" "{coarse_cell_size}" "{fine_cell_size}" "{VIIRS_start_date}" "{VIIRS_end_date}" "{HLS_start_date}" "{HLS_end_date}" "{coarse_directory}" "{fine_directory}" "{posterior_filename}" "{posterior_UQ_filename}" "{posterior_bias_filename}" "{posterior_bias_UQ_filename}"'
-#     logger.info(command)
-#     system(command)
+    Args:
+        github_url: The URL of the GitHub repository containing STARS.jl.
+            Defaults to "https://github.com/STARS-Data-Fusion/STARS.jl".
+        environment_name: The name of the Julia environment to install the package into.
+            Defaults to "ECOv002-L2T-STARS".
+
+    Returns:
+        A CompletedProcess object containing information about the execution of the Julia command.
+    """
+
+    julia_command = [
+        "julia",
+        "-e",
+        f'using Pkg; Pkg.activate("{environment_name}"); Pkg.develop(url="{github_URL}")'
+    ]
+
+    result = subprocess.run(julia_command, capture_output=True, text=True)
+
+    if result.returncode == 0:
+        print(f"STARS.jl installed successfully in environment '{environment_name}'!")
+    else:
+        print("Error installing STARS.jl:")
+        print(result.stderr)
+
+    return result
+
+def instantiate_STARS_jl(package_location: str):
+    """
+    Activates the package_location directory as the active project and instantiates it.
+
+    Args:
+        package_location: The directory of the Julia package to activate and instantiate.
+
+    Returns:
+        A CompletedProcess object containing information about the execution of the Julia command.
+    """
+
+    julia_command = [
+        "julia",
+        "-e",
+        f'using Pkg; Pkg.activate("{package_location}"); Pkg.instantiate()'
+    ]
+
+    result = subprocess.run(julia_command, capture_output=True, text=True)
+
+    if result.returncode == 0:
+        print(f"STARS.jl instantiated successfully in directory '{package_location}'!")
+    else:
+        print("Error instantiating STARS.jl:")
+        print(result.stderr)
+
+    return result
 
 def process_julia_data_fusion(
         tile: str,
@@ -579,18 +622,20 @@ def process_julia_data_fusion(
         prior_filename: str = None,
         prior_UQ_filename: str = None,
         prior_bias_filename: str = None,
-        prior_bias_UQ_filename: str = None):
+        prior_bias_UQ_filename: str = None,
+        environment_name: str = "@ECOv002-L2T-STARS"):
     julia_script_filename = join(abspath(dirname(__file__)), "process_ECOSTRESS_data_fusion.jl")
-    STARS_source_directory = join(abspath(dirname(__file__)), "..", "STARS_jl")
-    # command = f'cd "{STARS_source_directory}" && julia --project=@ECOSTRESS "{julia_script_filename}" "{tile}" "{coarse_cell_size}" "{fine_cell_size}" "{VIIRS_start_date}" "{VIIRS_end_date}" "{HLS_start_date}" "{HLS_end_date}" "{coarse_directory}" "{fine_directory}" "{posterior_filename}" "{posterior_UQ_filename}" "{posterior_bias_filename}" "{posterior_bias_UQ_filename}"'
-    command = f'export JULIA_NUM_THREADS=auto; julia --threads auto "{julia_script_filename}" "{tile}" "{coarse_cell_size}" "{fine_cell_size}" "{VIIRS_start_date}" "{VIIRS_end_date}" "{HLS_start_date}" "{HLS_end_date}" "{coarse_directory}" "{fine_directory}" "{posterior_filename}" "{posterior_UQ_filename}" "{posterior_bias_filename}" "{posterior_bias_UQ_filename}"'
+    STARS_source_directory = join(abspath(dirname(__file__)), "STARS_jl")
+    
+    instantiate_STARS_jl(STARS_source_directory)
+
+    command = f'export JULIA_NUM_THREADS=auto; julia --project="{STARS_source_directory}" --threads auto "{julia_script_filename}" "{tile}" "{coarse_cell_size}" "{fine_cell_size}" "{VIIRS_start_date}" "{VIIRS_end_date}" "{HLS_start_date}" "{HLS_end_date}" "{coarse_directory}" "{fine_directory}" "{posterior_filename}" "{posterior_UQ_filename}" "{posterior_bias_filename}" "{posterior_bias_UQ_filename}"'
 
     if all([filename is not None and exists(filename) for filename in [prior_filename, prior_UQ_filename, prior_bias_filename, prior_bias_UQ_filename]]):
         logger.info("passing prior into Julia data fusion system")
         command += f' "{prior_filename}" "{prior_UQ_filename}" "{prior_bias_filename}" "{prior_bias_UQ_filename}"'
 
     logger.info(command)
-    # system(command)
     subprocess.run(command, shell=True)
 
 

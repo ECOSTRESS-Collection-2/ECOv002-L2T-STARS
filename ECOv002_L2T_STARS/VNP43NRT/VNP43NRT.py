@@ -18,11 +18,10 @@ import colored_logging as cl
 import rasters
 from rasters import Raster, RasterGeometry, Point, Polygon
 from geos5fp import GEOS5FP, FailedGEOS5FPDownload
+from modland import find_modland_tiles, parsehv, generate_modland_grid
 
 from ..BRDF import bidirectional_reflectance
 from ..BRDF.SZA import calculate_SZA
-from ..MODLAND import find_MODLAND_tiles
-from ..MODLAND.indices import parsehv, generate_MODLAND_grid
 from ..VIIRS import VIIRSDownloaderAlbedo, VIIRSDownloaderNDVI
 from ..VIIRS.VNP09GA import VNP09GA, VNP09GAGranule, ALBEDO_COLORMAP, NDVI_COLORMAP, VIIRSUnavailableError
 from ..daterange import date_range
@@ -35,6 +34,65 @@ with open(join(abspath(dirname(__file__)), "version.txt")) as f:
     version = f.read()
 
 logger = logging.getLogger(__name__)
+
+def install_VNP43NRT_jl(
+    package_location: str = "https://github.com/STARS-Data-Fusion/VNP43NRT.jl",
+    environment_name: str = "@ECOv002-L2T-STARS"):
+    """
+    Installs the VNP43NRT.jl package from GitHub into a shared environment.
+
+    Args:
+        github_url: The URL of the GitHub repository containing VNP43NRT.jl.
+            Defaults to "https://github.com/STARS-Data-Fusion/VNP43NRT.jl".
+        environment_name: The name of the shared Julia environment to install the
+            package into. Defaults to "@ECOv002-L2T-STARS".
+
+    Returns:
+        A CompletedProcess object containing information about the execution of the Julia command.
+    """
+
+    julia_command = [
+        "julia",
+        "-e",
+        f'using Pkg; Pkg.activate("{environment_name}"); Pkg.develop(url="{package_location}")'
+    ]
+
+    result = subprocess.run(julia_command, capture_output=True, text=True)
+
+    if result.returncode == 0:
+        print(f"VNP43NRT.jl installed successfully in environment '{environment_name}'!")
+    else:
+        print("Error installing VNP43NRT.jl:")
+        print(result.stderr)
+
+    return result
+
+def instantiate_VNP43NRT_jl(package_location: str):
+    """
+    Activates the package_location directory as the active project and instantiates it.
+
+    Args:
+        package_location: The directory of the Julia package to activate and instantiate.
+
+    Returns:
+        A CompletedProcess object containing information about the execution of the Julia command.
+    """
+
+    julia_command = [
+        "julia",
+        "-e",
+        f'using Pkg; Pkg.activate("{package_location}"); Pkg.instantiate()'
+    ]
+
+    result = subprocess.run(julia_command, capture_output=True, text=True)
+
+    if result.returncode == 0:
+        print(f"VNP43NRT.jl instantiated successfully in directory '{package_location}'!")
+    else:
+        print("Error instantiating VNP43NRT.jl:")
+        print(result.stderr)
+
+    return result
 
 def process_julia_BRDF(
         band: str,
@@ -49,9 +107,13 @@ def process_julia_BRDF(
         relative_azimuth_directory: str,
         SZA_filename: str,
         output_directory: str):
+    parent_directory = abspath(join(dirname(__file__), ".."))
+    julia_source_directory = join(parent_directory, "VNP43NRT_jl")
     julia_script_filename = join(abspath(dirname(__file__)), "process_VNP43NRT.jl")
 
-    command = f'julia "{julia_script_filename}" "{band}" "{h}" "{v}" "{tile_width_cells}" "{start_date:%Y-%m-%d}" "{end_date:%Y-%m-%d}" "{reflectance_directory}" "{solar_zenith_directory}" "{sensor_zenith_directory}" "{relative_azimuth_directory}" "{SZA_filename}" "{output_directory}"'
+    instantiate_VNP43NRT_jl(julia_source_directory)
+
+    command = f'julia --project={julia_source_directory} "{julia_script_filename}" "{band}" "{h}" "{v}" "{tile_width_cells}" "{start_date:%Y-%m-%d}" "{end_date:%Y-%m-%d}" "{reflectance_directory}" "{solar_zenith_directory}" "{sensor_zenith_directory}" "{relative_azimuth_directory}" "{SZA_filename}" "{output_directory}"'
     logger.info(command)
     subprocess.run(command, shell=True)
 
@@ -289,7 +351,7 @@ class VNP43NRT(VIIRSDownloaderAlbedo, VIIRSDownloaderNDVI):
         if isinstance(date_UTC, str):
             date_UTC = parser.parse(date_UTC).date()
 
-        logger.info(f"processing BRDF for band {band} at tile {tile} on date {cl.time(date)}")
+        logger.info(f"processing BRDF for band {band} at tile {tile} on date {cl.time(date_UTC)}")
 
         end_date = date_UTC
         start_date = date_UTC - timedelta(days=16)
@@ -306,7 +368,7 @@ class VNP43NRT(VIIRSDownloaderAlbedo, VIIRSDownloaderNDVI):
         else:
             raise ValueError(f"invalid band: {band}")
 
-        grid = generate_MODLAND_grid(h, v, tile_width_cells)
+        grid = generate_modland_grid(h, v, tile_width_cells)
 
         # reflectance_list = []
         # solar_zenith_list = []
@@ -572,7 +634,7 @@ class VNP43NRT(VIIRSDownloaderAlbedo, VIIRSDownloaderNDVI):
         granule.add_layer("NDVI", NDVI)
 
         time_UTC = datetime(date_UTC.year, date_UTC.month, date_UTC.day, 10, 30)
-        geometry = generate_MODLAND_grid(*parsehv(tile), 1200)
+        geometry = generate_modland_grid(*parsehv(tile), 1200)
         AOT = self.AOT(time_UTC=time_UTC, geometry=geometry, resampling="cubic")
 
         if diagnostics:
@@ -652,7 +714,7 @@ class VNP43NRT(VIIRSDownloaderAlbedo, VIIRSDownloaderNDVI):
         if filename is not None and exists(filename):
             return Raster.open(filename, cmap=ALBEDO_COLORMAP)
 
-        tiles = sorted(find_MODLAND_tiles(geometry.boundary_latlon.geometry))
+        tiles = sorted(find_modland_tiles(geometry.boundary_latlon.geometry))
         albedo = None
 
         for tile in tiles:
@@ -694,7 +756,7 @@ class VNP43NRT(VIIRSDownloaderAlbedo, VIIRSDownloaderNDVI):
         if resampling is None:
             resampling = self.vnp09ga.resampling
 
-        tiles = sorted(find_MODLAND_tiles(geometry.boundary_latlon.geometry))
+        tiles = sorted(find_modland_tiles(geometry.boundary_latlon.geometry))
 
         if len(tiles) == 0:
             raise ValueError("no VIIRS tiles found covering target geometry")

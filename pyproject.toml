@@ -16,6 +16,8 @@ classifiers = [
 ]
 dependencies = [
     "colored-logging",
+    "ECOv002-granules",
+    "ECOv002-CMR",
     "pandas",
     "pillow",
     "geopandas",

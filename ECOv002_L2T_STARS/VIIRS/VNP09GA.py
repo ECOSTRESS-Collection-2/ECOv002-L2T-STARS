@@ -1,4 +1,5 @@
 import logging
+import os
 import warnings
 from datetime import datetime, date
 from os import remove
@@ -13,22 +14,19 @@ import h5py
 import numpy as np
 import pandas as pd
 from matplotlib.colors import LinearSegmentedColormap
-
-from daterange import get_date
 from dateutil import parser
 from skimage.transform import resize
 
 import colored_logging as cl
-
 import rasters
-from rasters import Raster, RasterGrid, RasterGeometry
-from rasters import Point, Polygon
+from rasters import Raster, RasterGrid, RasterGeometry, Point, Polygon
+from modland import generate_modland_grid
 
+from ..daterange import get_date
 from ..LPDAAC.LPDAACDataPool import RETRIES
-from ..MODLAND.indices import generate_MODLAND_grid
-import ..ecostress_cmr
 from ..exit_codes import DownloadFailed
 from .VIIRSDataPool import VIIRSGranule
+from .VIIRS_CMR_LOGIN import CMRServerUnreachable, VIIRS_CMR_login
 
 NDVI_COLORMAP = LinearSegmentedColormap.from_list(
     name="NDVI",
@@ -74,7 +72,7 @@ class VNP09GAGranule(VIIRSGranule):
         else:
             shape = cloud_mask.shape
 
-        geometry = generate_MODLAND_grid(h, v, shape[0])
+        geometry = generate_modland_grid(h, v, shape[0])
         cloud_mask = Raster(cloud_mask, geometry=geometry)
 
         return cloud_mask
@@ -103,7 +101,7 @@ class VNP09GAGranule(VIIRSGranule):
                 fill_value = dataset.attrs["_Fillvalue"]
 
             h, v = self.hv
-            grid = generate_MODLAND_grid(h, v, DN.shape[0])
+            grid = generate_modland_grid(h, v, DN.shape[0])
             logger.info(f"opening VIIRS file: {cl.file(self.filename)}")
             logger.info(f"loading {cl.val(dataset_name)} at {cl.val(f'{grid.cell_size:0.2f} m')} resolution")
             DN = np.where(DN == fill_value, np.nan, DN)
@@ -124,11 +122,11 @@ class VNP09GAGranule(VIIRSGranule):
 
     @property
     def geometry_M(self) -> RasterGrid:
-        return generate_MODLAND_grid(*self.hv, 1200)
+        return generate_modland_grid(*self.hv, 1200)
 
     @property
     def geometry_I(self) -> RasterGrid:
-        return generate_MODLAND_grid(*self.hv, 2400)
+        return generate_modland_grid(*self.hv, 2400)
 
     def geometry(self, band: str) -> RasterGrid:
         try:
@@ -213,7 +211,7 @@ class VNP09GAGranule(VIIRSGranule):
 
         if image is None:
             h, v = self.hv
-            grid_I = generate_MODLAND_grid(h, v, 2400)
+            grid_I = generate_modland_grid(h, v, 2400)
 
             image = self.dataset(
                 self.filename,
@@ -341,7 +339,7 @@ class VNP09GAGranule(VIIRSGranule):
 
         if image is None:
             h, v = self.hv
-            grid_I = generate_MODLAND_grid(h, v, 2400)
+            grid_I = generate_modland_grid(h, v, 2400)
 
             image = self.dataset(
                 self.filename,
@@ -469,7 +467,7 @@ class VNP09GAGranule(VIIRSGranule):
 
         if image is None:
             h, v = self.hv
-            grid_I = generate_MODLAND_grid(h, v, 2400)
+            grid_I = generate_modland_grid(h, v, 2400)
 
             image = self.dataset(
                 self.filename,
@@ -598,7 +596,7 @@ class VNP09GAGranule(VIIRSGranule):
 
         if image is None:
             h, v = self.hv
-            grid_I = generate_MODLAND_grid(h, v, 2400)
+            grid_I = generate_modland_grid(h, v, 2400)
 
             image = self.dataset(
                 self.filename,
@@ -1062,7 +1060,7 @@ def VIIRS_CMR_query(
     try:
         granules = query.get()
     except Exception as e:
-        raise ecostress_cmr.CMRServerUnreachable(e)
+        raise CMRServerUnreachable(e)
     granules = sorted(granules, key=lambda granule: granule["umm"]["TemporalExtent"]["RangeDateTime"]["BeginningDateTime"])
 
     logger.info("Found the following granules for VIIRS 2 using the CMR search:")
@@ -1095,7 +1093,7 @@ class VNP09GA:
 
         self.resampling = resampling
 
-        self._granules = pd.DataFrame(["date_UTC", "tile", "granule"])
+        self._granules = pd.DataFrame({"date_UTC": {}, "tile": {}, "granule": {}})
 
         if working_directory is None:
             working_directory = self.DEFAULT_WORKING_DIRECTORY
@@ -1122,7 +1120,7 @@ class VNP09GA:
         self.products_directory = products_directory
         self.mosaic_directory = mosaic_directory
 
-        self.auth = ecostress_cmr.login()
+        self.auth = VIIRS_CMR_login()
 
     def add_granules(self, granules: List[earthaccess.search.DataGranule]):
         data = pd.DataFrame([
@@ -1160,7 +1158,10 @@ class VNP09GA:
             return output_paths
 
         # Make sure to remove this before we return, so we use try..finally to avoid exceptions causing issues
-        temporary_download_directory = tempfile.mkdtemp(dir=join(self.download_directory, "tmp"))
+        temporary_parent_directory = join(self.download_directory, "tmp")
+        os.makedirs(temporary_parent_directory, exist_ok=True)
+        temporary_download_directory = tempfile.mkdtemp(dir=temporary_parent_directory)
+        
         try:
             last_download_exception = None
             for _ in range(0, RETRIES):
@@ -1226,6 +1227,9 @@ class VNP09GA:
             self,
             date_UTC: date,
             tile: str) -> Union[earthaccess.search.DataGranule, None]:
+        if "date_UTC" not in self._granules.columns:
+            raise ValueError(f"date_UTC column not in granules table")
+
         subset = self._granules[(self._granules.date_UTC == date_UTC) & (self._granules.tile == tile)]
         if len(subset) > 0:
             return subset.iloc[0].granule

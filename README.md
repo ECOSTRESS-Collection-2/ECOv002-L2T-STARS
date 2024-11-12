@@ -21,3 +21,16 @@ NASA Jet Propulsion Laboratory 329G
 [Claire Villanueva-Weeks](https://github.com/clairesvw) (she/her)<br>
 [claire.s.villanueva-weeks@jpl.nasa.gov](mailto:claire.s.villanueva-weeks@jpl.nasa.gov)<br>
 NASA Jet Propulsion Laboratory 329G
+
+## Environment
+
+```
+mamba create -y -n ECOv002-L2T-STARS -c conda-forge python=3.11 jupyter pykdtree 
+mamba activate ECOv002-L2T-STARS
+```
+
+## Installation
+
+```
+pip install ECOv002-L2T-STARS
+```
