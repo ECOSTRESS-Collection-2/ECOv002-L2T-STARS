@@ -1,4 +1,5 @@
 import logging
+import os
 import warnings
 from datetime import datetime, date
 from os import remove
@@ -1092,7 +1093,7 @@ class VNP09GA:
 
         self.resampling = resampling
 
-        self._granules = pd.DataFrame(["date_UTC", "tile", "granule"])
+        self._granules = pd.DataFrame({"date_UTC": {}, "tile": {}, "granule": {}})
 
         if working_directory is None:
             working_directory = self.DEFAULT_WORKING_DIRECTORY
@@ -1157,7 +1158,10 @@ class VNP09GA:
             return output_paths
 
         # Make sure to remove this before we return, so we use try..finally to avoid exceptions causing issues
-        temporary_download_directory = tempfile.mkdtemp(dir=join(self.download_directory, "tmp"))
+        temporary_parent_directory = join(self.download_directory, "tmp")
+        os.makedirs(temporary_parent_directory, exist_ok=True)
+        temporary_download_directory = tempfile.mkdtemp(dir=temporary_parent_directory)
+        
         try:
             last_download_exception = None
             for _ in range(0, RETRIES):
@@ -1223,6 +1227,9 @@ class VNP09GA:
             self,
             date_UTC: date,
             tile: str) -> Union[earthaccess.search.DataGranule, None]:
+        if "date_UTC" not in self._granules.columns:
+            raise ValueError(f"date_UTC column not in granules table")
+
         subset = self._granules[(self._granules.date_UTC == date_UTC) & (self._granules.tile == tile)]
         if len(subset) > 0:
             return subset.iloc[0].granule

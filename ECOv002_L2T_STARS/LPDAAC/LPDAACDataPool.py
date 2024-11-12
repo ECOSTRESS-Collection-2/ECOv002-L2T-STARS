@@ -19,7 +19,7 @@ from os.path import isdir
 from os.path import join
 from time import sleep
 from typing import List, OrderedDict
-
+import netrc
 import requests
 import xmltodict
 from bs4 import BeautifulSoup
@@ -60,6 +60,14 @@ class LPDAACDataPool:
     def __init__(self, username: str = None, password: str = None, remote: str = None, offline_ok: bool = False):
         if remote is None:
             remote = DEFAULT_REMOTE
+
+        if username is None or password is None:
+            try:
+                netrc_file = netrc.netrc()
+                username, _, password = netrc_file.authenticators("urs.earthdata.nasa.gov")
+            except Exception as e:
+                logger.exception(e)
+                logger.warning("netrc credentials not found for urs.earthdata.nasa.gov")
 
         if username is None or password is None:
             if not "LPDAAC_USERNAME" in os.environ or not "LPDAAC_PASSWORD" in os.environ:
