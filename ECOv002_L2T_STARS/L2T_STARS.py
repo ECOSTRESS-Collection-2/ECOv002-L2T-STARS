@@ -4,7 +4,7 @@ import socket
 import subprocess
 import sys
 import urllib
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta, date, timezone
 from glob import glob
 from os import makedirs, remove
 from os.path import join, abspath, dirname, expanduser, exists, basename
@@ -128,8 +128,7 @@ def generate_L2T_STARS_runconfig(
         instance_ID: str = None,
         product_counter: int = None,
         template_filename: str = None) -> str:
-    logger.info(
-        f"started generating L2T_STARS run-config for orbit {cl.val(orbit)} scene {cl.val(scene)}")
+
     timer = Timer()
 
     L2T_LSTE_granule = L2TLSTE(L2T_LSTE_filename)
@@ -149,8 +148,14 @@ def generate_L2T_STARS_runconfig(
     if build is None:
         build = DEFAULT_BUILD
 
-    pattern = join(working_directory,
-                   f"ECOv002_L2T_STARS_{orbit:05d}_{scene:03d}_{tile}_*_{build}_*.xml")
+    if working_directory is None:
+        working_directory = "."
+
+    date_UTC = time_UTC.date()
+
+    logger.info(f"started generating L2T_STARS run-config for tile {tile} on date {date_UTC}")
+
+    pattern = join(working_directory, f"ECOv002_L2T_STARS_{tile}_*_{build}_*.xml")
     logger.info(f"scanning for previous run-configs: {cl.val(pattern)}")
     previous_runconfigs = glob(pattern)
     previous_runconfig_count = len(previous_runconfigs)
@@ -169,13 +174,13 @@ def generate_L2T_STARS_runconfig(
     template_filename = abspath(expanduser(template_filename))
 
     if production_datetime is None:
-        production_datetime = datetime.utcnow()
+        production_datetime = datetime.now(timezone.utc)
 
     if product_counter is None:
         product_counter = 1
 
     timestamp = f"{time_UTC:%Y%m%d}"
-    granule_ID = f"ECOv002_L2T_STARS_{orbit:05d}_{scene:03d}_{tile}_{timestamp}_{build}_{product_counter:02d}"
+    granule_ID = f"ECOv002_L2T_STARS_{tile}_{timestamp}_{build}_{product_counter:02d}"
 
     if runconfig_filename is None:
         runconfig_filename = join(

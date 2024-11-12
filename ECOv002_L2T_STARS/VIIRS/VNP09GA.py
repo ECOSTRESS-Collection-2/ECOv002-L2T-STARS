@@ -23,9 +23,9 @@ from modland import generate_modland_grid
 
 from ..daterange import get_date
 from ..LPDAAC.LPDAACDataPool import RETRIES
-from ..ecostress_cmr import CMRServerUnreachable, login
 from ..exit_codes import DownloadFailed
 from .VIIRSDataPool import VIIRSGranule
+from .VIIRS_CMR_LOGIN import CMRServerUnreachable, VIIRS_CMR_login
 
 NDVI_COLORMAP = LinearSegmentedColormap.from_list(
     name="NDVI",
@@ -1119,7 +1119,7 @@ class VNP09GA:
         self.products_directory = products_directory
         self.mosaic_directory = mosaic_directory
 
-        self.auth = login()
+        self.auth = VIIRS_CMR_login()
 
     def add_granules(self, granules: List[earthaccess.search.DataGranule]):
         data = pd.DataFrame([
