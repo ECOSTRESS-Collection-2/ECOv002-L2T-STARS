@@ -26,9 +26,8 @@ from harmonized_landsat_sentinel import HLSLandsatMissing, HLSSentinelMissing, H
 from harmonized_landsat_sentinel import HLSTileNotAvailable, HLSSentinelNotAvailable, HLSLandsatNotAvailable, HLSDownloadFailed, HLSNotAvailable
 from harmonized_landsat_sentinel import HLSBandNotAcquired, HLS2CMR, CMR_SEARCH_URL
 
-from .ECOSTRESS_colors import NDVI_COLORMAP, ALBEDO_COLORMAP
-from .L2TLSTE import L2TLSTE
-from .L2TSTARS import L2TSTARS
+from ECOv002_granules import L2TLSTE, L2TSTARS, NDVI_COLORMAP, ALBEDO_COLORMAP
+
 from .LPDAAC.LPDAACDataPool import LPDAACServerUnreachable
 from .PGEVersion import PGEVersion
 from .VIIRS import VIIRSDownloaderAlbedo, VIIRSDownloaderNDVI
