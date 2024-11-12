@@ -22,7 +22,23 @@ NASA Jet Propulsion Laboratory 329G
 [claire.s.villanueva-weeks@jpl.nasa.gov](mailto:claire.s.villanueva-weeks@jpl.nasa.gov)<br>
 NASA Jet Propulsion Laboratory 329G
 
+## Prerequisites
+
+This is a Python package that calls Julia code. Julia must be installed in order to run this package.
+
+## Authentication
+
+This package requires an [EarthData](https://urs.earthdata.nasa.gov/) account and reads EarthData credentials from `~/.netrc` in the following format:
+
+```
+machine urs.earthdata.nasa.gov
+login <USERNAME>
+password <PASSWORD>
+```
+
 ## Environment
+
+On macOS, there are issues with installing `pykdtree` using pip, so it's better to use a mamba environment and install the `pykdtree` mamba package.
 
 ```
 mamba create -y -n ECOv002-L2T-STARS -c conda-forge python=3.11 jupyter pykdtree 
@@ -31,6 +47,22 @@ mamba activate ECOv002-L2T-STARS
 
 ## Installation
 
+Install this package from PyPi using the name `ECOv002-L2T-STARS` with dashes:
+
 ```
 pip install ECOv002-L2T-STARS
+```
+
+You can also install development versions of this package directly from a clone of this repository:
+
+```
+pip install .
+```
+
+## Usage
+
+Import this package with the name `ECOv002_L2T_STARS` with underscores:
+
+```
+import ECOv002_L2T_STARS
 ```
