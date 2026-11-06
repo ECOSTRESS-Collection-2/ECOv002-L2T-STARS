@@ -1,5 +1,3 @@
-from .L2T_STARS import *
-
 from os.path import join, abspath, dirname
 
 with open(join(abspath(dirname(__file__)), "version.txt")) as f:
@@ -7,3 +5,5 @@ with open(join(abspath(dirname(__file__)), "version.txt")) as f:
 
 __version__ = version
 __author__ = "Gregory H. Halverson"
+
+__all__ = []
