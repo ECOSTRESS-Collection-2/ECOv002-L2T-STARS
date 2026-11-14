@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ECOv002_L2T_STARS"
-version = "1.0.1"
+version = "1.1.0"
 description = "ECOSTRESS Collection 2 JPL STARS Data Fusion Product Generating Executable (PGE)"
 readme = "README.md"
 authors = [
@@ -17,7 +17,7 @@ classifiers = [
 dependencies = [
     "colored-logging",
     "ECOv002-granules",
-    "ECOv002-CMR",
+    "ECOv002-CMR~=1.6.0",
     "pandas",
     "pillow",
     "geopandas",
@@ -45,6 +45,7 @@ dependencies = [
     "sentinel-tiles",
     "six",
     "tensorflow",
+    "VCD43NRT",
     "untangle",
     "xmltodict"
 ]

@@ -22,27 +22,20 @@ from rasters import Raster, RasterGeometry
 from scipy import stats
 
 from harmonized_landsat_sentinel import CMRServerUnreachable
-from harmonized_landsat_sentinel import HLSLandsatMissing, HLSSentinelMissing, HLS
+from harmonized_landsat_sentinel import HLSLandsatMissing, HLSSentinelMissing, HLS2Connection
 from harmonized_landsat_sentinel import HLSTileNotAvailable, HLSSentinelNotAvailable, HLSLandsatNotAvailable, HLSDownloadFailed, HLSNotAvailable
-from harmonized_landsat_sentinel import HLSBandNotAcquired, HLS2CMR, CMR_SEARCH_URL
+from harmonized_landsat_sentinel import HLSBandNotAcquired, HLS2Connection, CMR_SEARCH_URL
 
 from ECOv002_granules import L2TLSTE, L2TSTARS, NDVI_COLORMAP, ALBEDO_COLORMAP
 
-from .LPDAAC.LPDAACDataPool import LPDAACServerUnreachable
+from VCD43NRT import VCD43NRT
 from .PGEVersion import PGEVersion
-from .VIIRS import VIIRSDownloaderAlbedo, VIIRSDownloaderNDVI
-from .VIIRS.VNP43IA4 import VNP43IA4
-from .VIIRS.VNP43MA3 import VNP43MA3
-from .VNP43NRT import VNP43NRT
 from .daterange import get_date
 from .exit_codes import *
 from .runconfig import ECOSTRESSRunConfig
 from .timer import Timer
 
-with open(join(abspath(dirname(__file__)), "version.txt")) as f:
-    version = f.read()
-
-__version__ = version
+from .version import __version__
 
 L2T_STARS_TEMPLATE = join(abspath(dirname(__file__)), "L2T_STARS.xml")
 DEFAULT_WORKING_DIRECTORY = "."
@@ -69,7 +62,6 @@ DEFAULT_TARGET_RESOLUTION = 70
 DEFAULT_NDVI_RESOLUTION = 490
 DEFAULT_ALBEDO_RESOLUTION = 980
 DEFAULT_USE_SPATIAL = False
-DEFAULT_USE_VNP43NRT = True
 DEFAULT_CALIBRATE_FINE = False
 
 L2T_STARS_SHORT_NAME = "ECO_L2T_STARS"
@@ -296,8 +288,6 @@ class L2TSTARSConfig(ECOSTRESSRunConfig):
         logger.info(f"loading L2T_STARS run-config: {cl.file(filename)}")
         runconfig = self.read_runconfig(filename)
 
-        # print(JSON_highlight(runconfig))
-
         try:
             if "StaticAncillaryFileGroup" not in runconfig:
                 raise MissingRunConfigValue(
@@ -475,28 +465,28 @@ def calibrate_fine_to_coarse(fine_image: Raster, coarse_image: Raster) -> Raster
     return calibrated_image
 
 
-def generate_NDVI_coarse_image(date_UTC: Union[date, str], VIIRS_connection: VIIRSDownloaderNDVI, geometry: RasterGeometry = None) -> Raster:
+def generate_NDVI_coarse_image(date_UTC: Union[date, str], VIIRS_connection: VCD43NRT, geometry: RasterGeometry = None) -> Raster:
     coarse_image = VIIRS_connection.NDVI(date_UTC=date_UTC, geometry=geometry)
     coarse_image = rt.where(coarse_image == 0, np.nan, coarse_image)
 
     return coarse_image
 
 
-def generate_NDVI_fine_image(date_UTC: Union[date, str], tile: str, HLS_connection: HLS) -> Raster:
+def generate_NDVI_fine_image(date_UTC: Union[date, str], tile: str, HLS_connection: HLS2Connection) -> Raster:
     fine_image = HLS_connection.NDVI(tile=tile, date_UTC=date_UTC)
     fine_image = rt.where(fine_image == 0, np.nan, fine_image)
 
     return fine_image
 
 
-def generate_albedo_coarse_image(date_UTC: Union[date, str], VIIRS_connection: VIIRSDownloaderAlbedo, geometry: RasterGeometry = None) -> Raster:
+def generate_albedo_coarse_image(date_UTC: Union[date, str], VIIRS_connection: VCD43NRT, geometry: RasterGeometry = None) -> Raster:
     coarse_image = VIIRS_connection.albedo(date_UTC=date_UTC, geometry=geometry)
     coarse_image = rt.where(coarse_image == 0, np.nan, coarse_image)
 
     return coarse_image
 
 
-def generate_albedo_fine_image(date_UTC: Union[date, str], tile: str, HLS_connection: HLS) -> Raster:
+def generate_albedo_fine_image(date_UTC: Union[date, str], tile: str, HLS_connection: HLS2Connection) -> Raster:
     fine_image = HLS_connection.albedo(tile=tile, date_UTC=date_UTC)
     fine_image = rt.where(fine_image == 0, np.nan, fine_image)
 
@@ -550,17 +540,7 @@ def install_STARS_jl(
     environment_name: str = "@ECOv002-L2T-STARS"):
     """
     Installs the STARS.jl package from GitHub into a specified environment.
-
-    Args:
-        github_url: The URL of the GitHub repository containing STARS.jl.
-            Defaults to "https://github.com/STARS-Data-Fusion/STARS.jl".
-        environment_name: The name of the Julia environment to install the package into.
-            Defaults to "ECOv002-L2T-STARS".
-
-    Returns:
-        A CompletedProcess object containing information about the execution of the Julia command.
     """
-
     julia_command = [
         "julia",
         "-e",
@@ -580,14 +560,7 @@ def install_STARS_jl(
 def instantiate_STARS_jl(package_location: str):
     """
     Activates the package_location directory as the active project and instantiates it.
-
-    Args:
-        package_location: The directory of the Julia package to activate and instantiate.
-
-    Returns:
-        A CompletedProcess object containing information about the execution of the Julia command.
     """
-
     julia_command = [
         "julia",
         "-e",
@@ -645,8 +618,8 @@ def retrieve_STARS_sources(
         HLS_end_date: date,
         VIIRS_start_date: date,
         VIIRS_end_date: date,
-        HLS_connection: HLS2CMR,
-        VIIRS_connection: VNP43NRT):
+        HLS_connection: HLS2Connection,
+        VIIRS_connection: VCD43NRT):
     logger.info(
         f"retrieving HLS sources for tile {cl.place(tile)} from {cl.time(HLS_start_date)} to {cl.time(HLS_end_date)}")
     for processing_date in [get_date(dt) for dt in rrule(DAILY, dtstart=HLS_start_date, until=HLS_end_date)]:
@@ -671,7 +644,6 @@ def retrieve_STARS_sources(
             logger.exception(e)
             continue
 
-    # VIIRS_start_date = start_date - timedelta(days=16)
     logger.info(
         f"retrieving VIIRS sources for tile {cl.place(tile)} from {cl.time(VIIRS_start_date)} to {cl.time(VIIRS_end_date)}")
 
@@ -699,9 +671,9 @@ def generate_STARS_inputs(
         NDVI_fine_directory: str,
         albedo_coarse_directory: str,
         albedo_fine_directory: str,
-        HLS_connection: HLS2CMR,
-        NDVI_VIIRS_connection: VIIRSDownloaderNDVI,
-        albedo_VIIRS_connection: VIIRSDownloaderAlbedo,
+        HLS_connection: HLS2Connection,
+        NDVI_VIIRS_connection: VCD43NRT,
+        albedo_VIIRS_connection: VCD43NRT,
         calibrate_fine: True):
     missing_coarse_dates = set()
 
@@ -829,7 +801,6 @@ def load_prior(
     prior_albedo_bias_filename = None
     prior_albedo_bias_UQ_filename = None
 
-    # check if prior L2T_STARS product is available
     if L2T_STARS_prior_filename is not None and exists(L2T_STARS_prior_filename):
         logger.info(f"loading prior L2T STARS product: {L2T_STARS_prior_filename}")
         L2T_STARS_prior_granule = L2TSTARS(L2T_STARS_prior_filename)
@@ -1006,9 +977,9 @@ def process_STARS_product(
         L2T_STARS_browse_filename: str,
         metadata: dict,
         prior: Prior,
-        HLS_connection: HLS2CMR,
-        NDVI_VIIRS_connection: VIIRSDownloaderNDVI,
-        albedo_VIIRS_connection: VIIRSDownloaderAlbedo,
+        HLS_connection: HLS2Connection,
+        NDVI_VIIRS_connection: VCD43NRT,
+        albedo_VIIRS_connection: VCD43NRT,
         using_prior: bool = False,
         calibrate_fine: bool = True,
         remove_input_staging: bool = True,
@@ -1361,7 +1332,6 @@ def L2T_STARS(
         target_resolution: int = DEFAULT_TARGET_RESOLUTION,
         NDVI_resolution: int = DEFAULT_NDVI_RESOLUTION,
         albedo_resolution: int = DEFAULT_ALBEDO_RESOLUTION,
-        use_VNP43NRT: bool = DEFAULT_USE_VNP43NRT,
         calibrate_fine: bool = DEFAULT_CALIBRATE_FINE,
         sources_only: bool = False,
         remove_input_staging: bool = True,
@@ -1369,9 +1339,6 @@ def L2T_STARS(
         remove_posterior: bool = True) -> int:
     """
     ECOSTRESS Collection 2 L2G L2T LSTE PGE
-    :param runconfig_filename: filename for XML run-config
-    :param log_filename: filename for logger output
-    :return: exit code number
     """
     exit_code = SUCCESS_EXIT_CODE
 
@@ -1475,8 +1442,6 @@ def L2T_STARS(
         logger.info(f"HLS products directory: {cl.dir(HLS_products_directory)}")
         VIIRS_download_directory = join(sources_directory, DEFAULT_VIIRS_DOWNLOAD_DIRECTORY)
         logger.info(f"VIIRS download directory: {cl.dir(VIIRS_download_directory)}")
-        VIIRS_products_directory = join(sources_directory, DEFAULT_VIIRS_PRODUCTS_DIRECTORY)
-        logger.info(f"VIIRS products directory: {cl.dir(VIIRS_products_directory)}")
         VIIRS_mosaic_directory = join(sources_directory, DEFAUL_VIIRS_MOSAIC_DIRECTORY)
         logger.info(f"VIIRS mosaic directory: {cl.dir(VIIRS_mosaic_directory)}")
         GEOS5FP_download_directory = join(sources_directory, DEFAULT_GEOS5FP_DOWNLOAD_DIRECTORY)
@@ -1495,10 +1460,9 @@ def L2T_STARS(
 
         logger.info(f"connecting to CMR Search server: {CMR_SEARCH_URL}")
         try:
-            HLS_connection = HLS2CMR(
+            HLS_connection = HLS2Connection(
                 working_directory=working_directory,
                 download_directory=HLS_download_directory,
-                products_directory=HLS_products_directory,
                 target_resolution=target_resolution
             )
         except CMRServerUnreachable as e:
@@ -1506,67 +1470,32 @@ def L2T_STARS(
             raise AncillaryServerUnreachable(
                 f"unable to connect to CMR Search server: {CMR_SEARCH_URL}")
 
-        if not HLS_connection.tile_grid.land(tile=tile):
+        if HLS_connection.tile_grid is not None and not HLS_connection.tile_grid.land(tile=tile):
             raise LandFilter(f"Sentinel tile {tile} is not on land")
 
-        if use_VNP43NRT:
-            try:
-                NDVI_VIIRS_connection = VNP43NRT(
-                    working_directory=working_directory,
-                    download_directory=VIIRS_download_directory,
-                    mosaic_directory=VIIRS_mosaic_directory,
-                    GEOS5FP_download=GEOS5FP_download_directory,
-                    GEOS5FP_products=GEOS5FP_products_directory,
-                    VNP09GA_directory=VNP09GA_products_directory,
-                    VNP43NRT_directory=VNP43NRT_products_directory
-                )
+        try:
+            NDVI_VIIRS_connection = VCD43NRT(
+                working_directory=working_directory,
+                download_directory=VIIRS_download_directory
+            )
 
-                albedo_VIIRS_connection = VNP43NRT(
-                    working_directory=working_directory,
-                    download_directory=VIIRS_download_directory,
-                    mosaic_directory=VIIRS_mosaic_directory,
-                    GEOS5FP_download=GEOS5FP_download_directory,
-                    GEOS5FP_products=GEOS5FP_products_directory,
-                    VNP09GA_directory=VNP09GA_products_directory,
-                    VNP43NRT_directory=VNP43NRT_products_directory
-                )
-            except CMRServerUnreachable as e:
-                logger.exception(e)
-                raise AncillaryServerUnreachable(
-                    f"unable to connect to CMR search server")
-        else:
-            try:
-                NDVI_VIIRS_connection = VNP43IA4(
-                    working_directory=working_directory,
-                    download_directory=VIIRS_download_directory,
-                    products_directory=VIIRS_products_directory,
-                    mosaic_directory=VIIRS_mosaic_directory
-                )
-
-                albedo_VIIRS_connection = VNP43MA3(
-                    working_directory=working_directory,
-                    download_directory=VIIRS_download_directory,
-                    products_directory=VIIRS_products_directory,
-                    mosaic_directory=VIIRS_mosaic_directory
-                )
-            except LPDAACServerUnreachable as e:
-                logger.exception(e)
-                raise AncillaryServerUnreachable(
-                    f"unable to connect to VIIRS server")
+            albedo_VIIRS_connection = VCD43NRT(
+                working_directory=working_directory,
+                download_directory=VIIRS_download_directory
+            )
+        except Exception as e:
+            logger.exception(e)
+            raise AncillaryServerUnreachable(
+                f"unable to initialize VCD43NRT connection")
 
         end_date = date_UTC
-        # the start date of the BRDF-corrected VIIRS coarse time-series is 10 days before the target date
         VIIRS_start_date = end_date - timedelta(days=spinup_days)
-        # to produce that first BRDF-corrected image, we need VNP09GA starting 16 days prior to the first coarse date
         VIIRS_download_start_date = VIIRS_start_date - timedelta(days=16)
         VIIRS_end_date = end_date
 
-        # define start date of HLS fine image input time-series
         if using_prior and prior_date_UTC >= VIIRS_start_date:
-            # if we're using a prior, HLS inputs begin the day after the prior
             HLS_start_date = prior_date_UTC + timedelta(days=1)
         else:
-            # if we're initializing, HLS inputs begin on the same day as the VIIRS inputs
             HLS_start_date = VIIRS_start_date
 
         HLS_end_date = end_date
