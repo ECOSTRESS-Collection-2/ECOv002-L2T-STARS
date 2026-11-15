@@ -1,0 +1,200 @@
+{
+  "source_working_dir": "/Users/halverso/data/ECOSTRESS_collection_2_testing",
+  "tile": "11SPS",
+  "target_date": "2026-10-27",
+  "prior_date": "2026-10-23",
+  "runs": [
+    {
+      "product": "NDVI",
+      "tile": "11SPS",
+      "coarse_cell_size": 490,
+      "fine_cell_size": 70,
+      "viirs_start_date": "2026-10-20",
+      "viirs_end_date": "2026-10-27",
+      "hls_start_date": "2026-10-24",
+      "hls_end_date": "2026-10-27",
+      "julia_script": "/Users/halverso/Projects/ECOSTRESS-Collection-2/process_ECOSTRESS_data_fusion.jl",
+      "inputs": {
+        "downsampled_directory": "inputs/DOWNSAMPLED_products",
+        "coarse_rasters": [
+          {
+            "date": "2026-10-20",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-20/11SPS/STARS_NDVI_11SPS_490m.tif",
+            "present": true
+          },
+          {
+            "date": "2026-10-21",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-21/11SPS/STARS_NDVI_11SPS_490m.tif",
+            "present": true
+          },
+          {
+            "date": "2026-10-22",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-22/11SPS/STARS_NDVI_11SPS_490m.tif",
+            "present": true
+          },
+          {
+            "date": "2026-10-23",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-23/11SPS/STARS_NDVI_11SPS_490m.tif",
+            "present": true
+          },
+          {
+            "date": "2026-10-24",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-24/11SPS/STARS_NDVI_11SPS_490m.tif",
+            "present": true
+          },
+          {
+            "date": "2026-10-25",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-25/11SPS/STARS_NDVI_11SPS_490m.tif",
+            "present": true
+          },
+          {
+            "date": "2026-10-26",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-26/11SPS/STARS_NDVI_11SPS_490m.tif",
+            "present": true
+          },
+          {
+            "date": "2026-10-27",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-27/11SPS/STARS_NDVI_11SPS_490m.tif",
+            "present": true
+          }
+        ],
+        "fine_rasters": [
+          {
+            "date": "2026-10-24",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-24/11SPS/STARS_NDVI_11SPS_70m.tif",
+            "present": false
+          },
+          {
+            "date": "2026-10-25",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-25/11SPS/STARS_NDVI_11SPS_70m.tif",
+            "present": false
+          },
+          {
+            "date": "2026-10-26",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-26/11SPS/STARS_NDVI_11SPS_70m.tif",
+            "present": true
+          },
+          {
+            "date": "2026-10-27",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-27/11SPS/STARS_NDVI_11SPS_70m.tif",
+            "present": true
+          }
+        ],
+        "priors": {
+          "prior": "priors/STARS_NDVI_2026-10-23_11SPS_70m.tif",
+          "prior_UQ": "priors/STARS_NDVI.UQ_2026-10-23_11SPS_70m.tif",
+          "prior_bias": "priors/STARS_NDVI.bias_2026-10-23_11SPS_490m.tif",
+          "prior_bias_UQ": "priors/STARS_NDVI.bias.UQ_2026-10-23_11SPS_490m.tif"
+        }
+      },
+      "reference_outputs": {
+        "posterior": "reference_outputs/STARS_NDVI_2026-10-27_11SPS_70m.tif",
+        "posterior_UQ": "reference_outputs/STARS_NDVI.UQ_2026-10-27_11SPS_70m.tif",
+        "posterior_bias": "reference_outputs/STARS_NDVI.bias_2026-10-27_11SPS_490m.tif",
+        "posterior_bias_UQ": "reference_outputs/STARS_NDVI.bias.UQ_2026-10-27_11SPS_490m.tif"
+      },
+      "isolated_test_outputs": {
+        "posterior": "test_outputs/STARS_NDVI_2026-10-27_11SPS_70m.tif",
+        "posterior_UQ": "test_outputs/STARS_NDVI.UQ_2026-10-27_11SPS_70m.tif",
+        "posterior_bias": "test_outputs/STARS_NDVI.bias_2026-10-27_11SPS_490m.tif",
+        "posterior_bias_UQ": "test_outputs/STARS_NDVI.bias.UQ_2026-10-27_11SPS_490m.tif"
+      }
+    },
+    {
+      "product": "albedo",
+      "tile": "11SPS",
+      "coarse_cell_size": 980,
+      "fine_cell_size": 70,
+      "viirs_start_date": "2026-10-20",
+      "viirs_end_date": "2026-10-27",
+      "hls_start_date": "2026-10-24",
+      "hls_end_date": "2026-10-27",
+      "julia_script": "/Users/halverso/Projects/ECOSTRESS-Collection-2/process_ECOSTRESS_data_fusion.jl",
+      "inputs": {
+        "downsampled_directory": "inputs/DOWNSAMPLED_products",
+        "coarse_rasters": [
+          {
+            "date": "2026-10-20",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-20/11SPS/STARS_albedo_11SPS_980m.tif",
+            "present": true
+          },
+          {
+            "date": "2026-10-21",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-21/11SPS/STARS_albedo_11SPS_980m.tif",
+            "present": true
+          },
+          {
+            "date": "2026-10-22",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-22/11SPS/STARS_albedo_11SPS_980m.tif",
+            "present": true
+          },
+          {
+            "date": "2026-10-23",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-23/11SPS/STARS_albedo_11SPS_980m.tif",
+            "present": true
+          },
+          {
+            "date": "2026-10-24",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-24/11SPS/STARS_albedo_11SPS_980m.tif",
+            "present": true
+          },
+          {
+            "date": "2026-10-25",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-25/11SPS/STARS_albedo_11SPS_980m.tif",
+            "present": true
+          },
+          {
+            "date": "2026-10-26",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-26/11SPS/STARS_albedo_11SPS_980m.tif",
+            "present": true
+          },
+          {
+            "date": "2026-10-27",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-27/11SPS/STARS_albedo_11SPS_980m.tif",
+            "present": true
+          }
+        ],
+        "fine_rasters": [
+          {
+            "date": "2026-10-24",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-24/11SPS/STARS_albedo_11SPS_70m.tif",
+            "present": false
+          },
+          {
+            "date": "2026-10-25",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-25/11SPS/STARS_albedo_11SPS_70m.tif",
+            "present": false
+          },
+          {
+            "date": "2026-10-26",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-26/11SPS/STARS_albedo_11SPS_70m.tif",
+            "present": true
+          },
+          {
+            "date": "2026-10-27",
+            "relative_path": "inputs/DOWNSAMPLED_products/2026/2026-10-27/11SPS/STARS_albedo_11SPS_70m.tif",
+            "present": true
+          }
+        ],
+        "priors": {
+          "prior": "priors/STARS_albedo_2026-10-23_11SPS_70m.tif",
+          "prior_UQ": "priors/STARS_albedo.UQ_2026-10-23_11SPS_70m.tif",
+          "prior_bias": "priors/STARS_albedo.bias_2026-10-23_11SPS_980m.tif",
+          "prior_bias_UQ": "priors/STARS_albedo.bias.UQ_2026-10-23_11SPS_980m.tif"
+        }
+      },
+      "reference_outputs": {
+        "posterior": "reference_outputs/STARS_albedo_2026-10-27_11SPS_70m.tif",
+        "posterior_UQ": "reference_outputs/STARS_albedo.UQ_2026-10-27_11SPS_70m.tif",
+        "posterior_bias": "reference_outputs/STARS_albedo.bias_2026-10-27_11SPS_980m.tif",
+        "posterior_bias_UQ": "reference_outputs/STARS_albedo.bias.UQ_2026-10-27_11SPS_980m.tif"
+      },
+      "isolated_test_outputs": {
+        "posterior": "test_outputs/STARS_albedo_2026-10-27_11SPS_70m.tif",
+        "posterior_UQ": "test_outputs/STARS_albedo.UQ_2026-10-27_11SPS_70m.tif",
+        "posterior_bias": "test_outputs/STARS_albedo.bias_2026-10-27_11SPS_980m.tif",
+        "posterior_bias_UQ": "test_outputs/STARS_albedo.bias.UQ_2026-10-27_11SPS_980m.tif"
+      }
+    }
+  ]
+}

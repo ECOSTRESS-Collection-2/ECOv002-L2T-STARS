@@ -52,6 +52,9 @@ dependencies = [
 
 requires-python = ">=3.11"
 
+[project.scripts]
+L2T_STARS = "ECOv002_L2T_STARS.L2T_STARS:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=6.0",
@@ -59,11 +62,11 @@ dev = [
 ]
 
 [tool.setuptools.package-data]
-ECOv002_L2T_STARS = ["*.txt"]
+ECOv002_L2T_STARS = ["*.txt", "*.xml", "*.jl", "Project.toml"]
 
 [project.urls]
-"Homepage" = "https://github.com/ECOSTRESS-Collection-2/ECOv002_L2T_STARS"
+"Homepage" = "https://github.com/ECOSTRESS-Collection-2/ECOv002-L2T-STARS"
 
 [tool.setuptools.packages.find]
-include = ["ECOv002_L2T_JET"]
+include = ["ECOv002_L2T_STARS*"]
 exclude = []

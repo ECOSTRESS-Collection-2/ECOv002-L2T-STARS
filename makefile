@@ -6,7 +6,7 @@ PYTHON_VERSION = $(if $(PYTHON),$(PYTHON),3.12)
 JULIA_VERSION = $(if $(JULIA),$(JULIA),1.11)
 JULIA_PROJECT_NAME = $(if $(JULIA_PROJECT),$(JULIA_PROJECT),$(subst -,_,$(PACKAGE_NAME)))
 
-.PHONY: clean test smoke-test smoke-test-python smoke-test-julia test-julia \
+.PHONY: clean repomix test smoke-test smoke-test-python smoke-test-julia test-julia \
         build twine-upload dist install-package install uninstall reinstall \
         environment remove-environment install-julia resolve-julia \
         julia-version colima-start docker-build docker-build-environment \
@@ -20,6 +20,10 @@ clean:
 	rm -rf build/ dist/ *.egg-info .pytest_cache .coverage htmlcov
 	find . -type d -name "__pycache__" -exec rm -rf {} +
 	find . -type f -name "*.pyc" -delete
+
+repomix:
+	@echo "Generating Repomix bundle..."
+	npx repomix --ignore "**/*.geojson,**/*.ipynb,repomix-output.xml,response.json,**/*.pyc,**/__pycache__/**,**/*.egg-info/**,**/Manifest.toml"
 
 # --- Testing ---
 

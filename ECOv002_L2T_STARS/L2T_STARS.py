@@ -6,8 +6,8 @@ import sys
 import urllib
 from datetime import datetime, timedelta, date, timezone
 from glob import glob
-from os import makedirs, remove
-from os.path import join, abspath, dirname, expanduser, exists, basename
+from os import makedirs, remove, environ
+from os.path import join, abspath, dirname, expanduser, exists, basename, isdir
 from shutil import which
 from typing import Union
 from uuid import uuid4
@@ -20,21 +20,48 @@ from dateutil import parser
 from dateutil.rrule import rrule, DAILY
 from rasters import Raster, RasterGeometry
 from scipy import stats
+from sentinel_tiles import SentinelTileGrid
 
-from harmonized_landsat_sentinel import CMRServerUnreachable
-from harmonized_landsat_sentinel import HLSLandsatMissing, HLSSentinelMissing, HLS2Connection
-from harmonized_landsat_sentinel import HLSTileNotAvailable, HLSSentinelNotAvailable, HLSLandsatNotAvailable, HLSDownloadFailed, HLSNotAvailable
-from harmonized_landsat_sentinel import HLSBandNotAcquired, HLS2Connection, CMR_SEARCH_URL
+from harmonized_landsat_sentinel import (
+    CMRServerUnreachable,
+    HLSLandsatMissing,
+    HLSSentinelMissing,
+    HLS2Connection,
+    HLSTileNotAvailable,
+    HLSSentinelNotAvailable,
+    HLSLandsatNotAvailable,
+    HLSDownloadFailed,
+    HLSNotAvailable,
+    HLSBandNotAcquired,
+    CMR_SEARCH_URL,
+)
 
 from ECOv002_granules import L2TLSTE, L2TSTARS, NDVI_COLORMAP, ALBEDO_COLORMAP
 
 from VCD43NRT import VCD43NRT
+from VCD43NRT.VCD43NRT import VIIRSDownloaderAlbedo, VIIRSDownloaderNDVI
 from .PGEVersion import PGEVersion
 from .daterange import get_date
-from .exit_codes import *
+from .exit_codes import (
+    ANCILLARY_LATENCY,
+    LAND_FILTER,
+    SUCCESS_EXIT_CODE,
+    ECOSTRESSExitCodeException,
+    UnableToParseRunConfig,
+    MissingRunConfigValue,
+    RUNCONFIG_FILENAME_NOT_SUPPLIED,
+    AncillaryServerUnreachable,
+    AncillaryLatency,
+    LandFilter,
+    InputFilesInaccessible,
+    DownloadFailed,
+    ANCILLARY_SERVER_UNREACHABLE,
+    BlankOutput,
+    DOWNLOAD_FAILED,
+    UNCLASSIFIED_FAILURE_EXIT_CODE,
+)
 from .runconfig import ECOSTRESSRunConfig
 from .timer import Timer
-
 from .version import __version__
 
 L2T_STARS_TEMPLATE = join(abspath(dirname(__file__)), "L2T_STARS.xml")
@@ -56,6 +83,8 @@ DEFAULT_GEOS5FP_DOWNLOAD_DIRECTORY = "GEOS5FP_download"
 DEFAULT_GEOS5FP_PRODUCTS_DIRECTORY = "GEOS5FP_products"
 DEFAULT_VNP09GA_PRODUCTS_DIRECTORY = "VNP09GA_products"
 DEFAULT_VNP43NRT_PRODUCTS_DIRECTORY = "VNP43NRT_products"
+DEFAULT_VCD43NRT_PRODUCTS_DIRECTORY = "VCD43NRT_products"
+DEFAULT_STARS_DOWNSAMPLED_DIRECTORY = "DOWNSAMPLED_products"
 VIIRS_GIVEUP_DAYS = 4
 DEFAULT_SPINUP_DAYS = 7
 DEFAULT_TARGET_RESOLUTION = 70
@@ -119,7 +148,6 @@ def generate_L2T_STARS_runconfig(
         instance_ID: str = None,
         product_counter: int = None,
         template_filename: str = None) -> str:
-
     timer = Timer()
 
     L2T_LSTE_granule = L2TLSTE(L2T_LSTE_filename)
@@ -303,7 +331,7 @@ class L2TSTARSConfig(ECOSTRESSRunConfig):
 
             if "L2T_STARS_SOURCES" not in runconfig["StaticAncillaryFileGroup"]:
                 raise MissingRunConfigValue(
-                    f"missing StaticAncillaryFileGroup/L2T_STARS_WORKING in L2T_STARS run-config: {filename}")
+                    f"missing StaticAncillaryFileGroup/L2T_STARS_SOURCES in L2T_STARS run-config: {filename}")
 
             sources_directory = abspath(
                 runconfig["StaticAncillaryFileGroup"]["L2T_STARS_SOURCES"])
@@ -448,6 +476,21 @@ def generate_filename(directory: str, variable: str, date_UTC: Union[date, str],
     return filename
 
 
+def generate_downsampled_filename(directory: str, variable: str, date_UTC: Union[date, str], tile: str, cell_size: int) -> str:
+    if isinstance(date_UTC, str):
+        date_UTC = parser.parse(date_UTC).date()
+
+    variable = str(variable)
+    year = str(date_UTC.year)
+    timestamp = date_UTC.strftime("%Y-%m-%d")
+    tile = str(tile)
+    cell_size = int(cell_size)
+    filename = join(directory, year, timestamp, tile, f"STARS_{variable}_{tile}_{cell_size}m.tif")
+    makedirs(dirname(filename), exist_ok=True)
+
+    return filename
+
+
 def calibrate_fine_to_coarse(fine_image: Raster, coarse_image: Raster) -> Raster:
     aggregated_image = fine_image.to_geometry(coarse_image.geometry, resampling="average")
     x = np.array(aggregated_image).flatten()
@@ -465,7 +508,7 @@ def calibrate_fine_to_coarse(fine_image: Raster, coarse_image: Raster) -> Raster
     return calibrated_image
 
 
-def generate_NDVI_coarse_image(date_UTC: Union[date, str], VIIRS_connection: VCD43NRT, geometry: RasterGeometry = None) -> Raster:
+def generate_NDVI_coarse_image(date_UTC: Union[date, str], VIIRS_connection: VIIRSDownloaderNDVI, geometry: RasterGeometry = None) -> Raster:
     coarse_image = VIIRS_connection.NDVI(date_UTC=date_UTC, geometry=geometry)
     coarse_image = rt.where(coarse_image == 0, np.nan, coarse_image)
 
@@ -479,7 +522,7 @@ def generate_NDVI_fine_image(date_UTC: Union[date, str], tile: str, HLS_connecti
     return fine_image
 
 
-def generate_albedo_coarse_image(date_UTC: Union[date, str], VIIRS_connection: VCD43NRT, geometry: RasterGeometry = None) -> Raster:
+def generate_albedo_coarse_image(date_UTC: Union[date, str], VIIRS_connection: VIIRSDownloaderAlbedo, geometry: RasterGeometry = None) -> Raster:
     coarse_image = VIIRS_connection.albedo(date_UTC=date_UTC, geometry=geometry)
     coarse_image = rt.where(coarse_image == 0, np.nan, coarse_image)
 
@@ -535,47 +578,6 @@ def generate_model_state_tile_date_directory(model_directory: str, tile: str, da
 
     return directory
 
-def install_STARS_jl(
-    github_URL: str = "https://github.com/STARS-Data-Fusion/STARS.jl",
-    environment_name: str = "@ECOv002-L2T-STARS"):
-    """
-    Installs the STARS.jl package from GitHub into a specified environment.
-    """
-    julia_command = [
-        "julia",
-        "-e",
-        f'using Pkg; Pkg.activate("{environment_name}"); Pkg.develop(url="{github_URL}")'
-    ]
-
-    result = subprocess.run(julia_command, capture_output=True, text=True)
-
-    if result.returncode == 0:
-        print(f"STARS.jl installed successfully in environment '{environment_name}'!")
-    else:
-        print("Error installing STARS.jl:")
-        print(result.stderr)
-
-    return result
-
-def instantiate_STARS_jl(package_location: str):
-    """
-    Activates the package_location directory as the active project and instantiates it.
-    """
-    julia_command = [
-        "julia",
-        "-e",
-        f'using Pkg; Pkg.activate("{package_location}"); Pkg.instantiate()'
-    ]
-
-    result = subprocess.run(julia_command, capture_output=True, text=True)
-
-    if result.returncode == 0:
-        print(f"STARS.jl instantiated successfully in directory '{package_location}'!")
-    else:
-        print("Error instantiating STARS.jl:")
-        print(result.stderr)
-
-    return result
 
 def process_julia_data_fusion(
         tile: str,
@@ -585,8 +587,8 @@ def process_julia_data_fusion(
         VIIRS_end_date: date,
         HLS_start_date: date,
         HLS_end_date: date,
-        coarse_directory: str,
-        fine_directory: str,
+        downsampled_directory: str,
+        product_name: str,
         posterior_filename: str,
         posterior_UQ_filename: str,
         posterior_bias_filename: str,
@@ -594,21 +596,34 @@ def process_julia_data_fusion(
         prior_filename: str = None,
         prior_UQ_filename: str = None,
         prior_bias_filename: str = None,
-        prior_bias_UQ_filename: str = None,
-        environment_name: str = "@ECOv002-L2T-STARS"):
-    julia_script_filename = join(abspath(dirname(__file__)), "process_ECOSTRESS_data_fusion.jl")
-    STARS_source_directory = join(abspath(dirname(__file__)), "STARS_jl")
-    
-    instantiate_STARS_jl(STARS_source_directory)
+        prior_bias_UQ_filename: str = None):
+    package_directory = abspath(dirname(__file__))
+    julia_script_filename = join(package_directory, "process_ECOSTRESS_data_fusion.jl")
+    julia_env_directory = abspath(join(package_directory, "..", "julia_env"))
+    if not isdir(julia_env_directory):
+        julia_env_directory = package_directory
 
-    command = f'export JULIA_NUM_THREADS=auto; julia --project="{STARS_source_directory}" --threads auto "{julia_script_filename}" "{tile}" "{coarse_cell_size}" "{fine_cell_size}" "{VIIRS_start_date}" "{VIIRS_end_date}" "{HLS_start_date}" "{HLS_end_date}" "{coarse_directory}" "{fine_directory}" "{posterior_filename}" "{posterior_UQ_filename}" "{posterior_bias_filename}" "{posterior_bias_UQ_filename}"'
+    julia_cmd = "julia +1.11" if which("juliaup") else "julia"
+    project_flag = f'--project="{julia_env_directory}" ' if isdir(julia_env_directory) and not environ.get("JULIA_LOAD_PATH") else ""
+
+    sysimage_path = environ.get("STARS_JULIA_SYSIMAGE")
+    if not sysimage_path:
+        for ext in ("so", "dylib", "dll"):
+            candidate = join(julia_env_directory, f"stars_sysimage.{ext}")
+            if exists(candidate):
+                sysimage_path = candidate
+                break
+
+    sysimage_flag = f'--sysimage="{sysimage_path}" ' if sysimage_path and exists(sysimage_path) else ""
+
+    command = f'export JULIA_NUM_THREADS=auto; {julia_cmd} {sysimage_flag}{project_flag}--threads auto "{julia_script_filename}" "{tile}" "{coarse_cell_size}" "{fine_cell_size}" "{VIIRS_start_date}" "{VIIRS_end_date}" "{HLS_start_date}" "{HLS_end_date}" "{downsampled_directory}" "{product_name}" "{posterior_filename}" "{posterior_UQ_filename}" "{posterior_bias_filename}" "{posterior_bias_UQ_filename}"'
 
     if all([filename is not None and exists(filename) for filename in [prior_filename, prior_UQ_filename, prior_bias_filename, prior_bias_UQ_filename]]):
         logger.info("passing prior into Julia data fusion system")
         command += f' "{prior_filename}" "{prior_UQ_filename}" "{prior_bias_filename}" "{prior_bias_UQ_filename}"'
 
     logger.info(command)
-    subprocess.run(command, shell=True)
+    subprocess.run(command, shell=True, check=True)
 
 
 def retrieve_STARS_sources(
@@ -666,120 +681,139 @@ def generate_STARS_inputs(
         target_resolution: int,
         NDVI_coarse_geometry: RasterGeometry,
         albedo_coarse_geometry: RasterGeometry,
-        working_directory: str,
-        NDVI_coarse_directory: str,
-        NDVI_fine_directory: str,
-        albedo_coarse_directory: str,
-        albedo_fine_directory: str,
+        downsampled_directory: str,
         HLS_connection: HLS2Connection,
-        NDVI_VIIRS_connection: VCD43NRT,
-        albedo_VIIRS_connection: VCD43NRT,
-        calibrate_fine: True):
+        NDVI_VIIRS_connection: VIIRSDownloaderNDVI,
+        albedo_VIIRS_connection: VIIRSDownloaderAlbedo = None,
+        calibrate_fine: bool = True):
+    """
+    This function generates the input files for running L2T_STARS. If these files already exist
+    then it does nothing.
+    """
+    if albedo_VIIRS_connection is None:
+        albedo_VIIRS_connection = NDVI_VIIRS_connection
+
     missing_coarse_dates = set()
 
+    logger.info(f"preparing coarse and fine images for STARS at {cl.place(tile)}")
+
     for processing_date in [get_date(dt) for dt in rrule(DAILY, dtstart=VIIRS_start_date, until=VIIRS_end_date)]:
-        logger.info(f"preparing coarse image for STARS NDVI at {cl.place(tile)} on {cl.time(processing_date)}")
+        NDVI_coarse_filename = generate_downsampled_filename(
+            directory=downsampled_directory,
+            variable="NDVI",
+            date_UTC=processing_date,
+            tile=tile,
+            cell_size=NDVI_resolution
+        )
+
+        NDVI_fine_filename = generate_downsampled_filename(
+            directory=downsampled_directory,
+            variable="NDVI",
+            date_UTC=processing_date,
+            tile=tile,
+            cell_size=target_resolution
+        )
+
+        albedo_coarse_filename = generate_downsampled_filename(
+            directory=downsampled_directory,
+            variable="albedo",
+            date_UTC=processing_date,
+            tile=tile,
+            cell_size=albedo_resolution
+        )
+
+        albedo_fine_filename = generate_downsampled_filename(
+            directory=downsampled_directory,
+            variable="albedo",
+            date_UTC=processing_date,
+            tile=tile,
+            cell_size=target_resolution
+        )
 
         try:
-            NDVI_coarse_image = generate_NDVI_coarse_image(
-                date_UTC=processing_date,
-                VIIRS_connection=NDVI_VIIRS_connection,
-                geometry=NDVI_coarse_geometry
-            )
+            NDVI_coarse_exists = exists(NDVI_coarse_filename)
+            if not NDVI_coarse_exists:
+                logger.info(f"preparing coarse image for STARS NDVI at {cl.place(tile)} on {cl.time(processing_date)}")
 
-            NDVI_coarse_filename = generate_filename(
-                directory=NDVI_coarse_directory,
-                variable="NDVI",
-                date_UTC=processing_date,
-                tile=tile,
-                cell_size=NDVI_resolution
-            )
+                NDVI_coarse_image = generate_NDVI_coarse_image(
+                    date_UTC=processing_date,
+                    VIIRS_connection=NDVI_VIIRS_connection,
+                    geometry=NDVI_coarse_geometry
+                )
 
-            logger.info(f"saving coarse image for STARS NDVI at {cl.place(tile)} on {cl.time(processing_date)}: {NDVI_coarse_filename}")
-            NDVI_coarse_image.to_geotiff(NDVI_coarse_filename)
+                logger.info(f"saving coarse image for STARS NDVI at {cl.place(tile)} on {cl.time(processing_date)}: {NDVI_coarse_filename}")
+                NDVI_coarse_image.to_geotiff(NDVI_coarse_filename)
 
             if processing_date >= HLS_start_date:
-                logger.info(f"preparing fine image for STARS NDVI at {cl.place(tile)} on {cl.time(processing_date)}")
-
                 try:
-                    NDVI_fine_image = generate_NDVI_fine_image(
-                        date_UTC=processing_date,
-                        tile=tile,
-                        HLS_connection=HLS_connection
-                    )
+                    if not exists(NDVI_fine_filename):
+                        logger.info(f"preparing fine image for STARS NDVI at {cl.place(tile)} on {cl.time(processing_date)}")
 
-                    if calibrate_fine:
-                        logger.info(f"calibrating fine image for STARS NDVI at {cl.place(tile)} on {cl.time(processing_date)}")
-                        NDVI_fine_image = calibrate_fine_to_coarse(NDVI_fine_image, NDVI_coarse_image)
+                        NDVI_fine_image = generate_NDVI_fine_image(
+                            date_UTC=processing_date,
+                            tile=tile,
+                            HLS_connection=HLS_connection
+                        )
 
-                    NDVI_fine_filename = generate_filename(
-                        directory=NDVI_fine_directory,
-                        variable="NDVI",
-                        date_UTC=processing_date,
-                        tile=tile,
-                        cell_size=target_resolution
-                    )
+                        if calibrate_fine:
+                            if NDVI_coarse_exists:
+                                NDVI_coarse_image = Raster.open(NDVI_coarse_filename)
+                            logger.info(f"calibrating fine image for STARS NDVI at {cl.place(tile)} on {cl.time(processing_date)}")
+                            NDVI_fine_image = calibrate_fine_to_coarse(NDVI_fine_image, NDVI_coarse_image)
 
-                    logger.info(f"saving fine image for STARS NDVI at {cl.place(tile)} on {cl.time(processing_date)}: {NDVI_fine_filename}")
-                    NDVI_fine_image.to_geotiff(NDVI_fine_filename)
-                except:
+                        logger.info(f"saving fine image for STARS NDVI at {cl.place(tile)} on {cl.time(processing_date)}: {NDVI_fine_filename}")
+                        NDVI_fine_image.to_geotiff(NDVI_fine_filename)
+                except Exception as e:
+                    logger.debug(e)
                     logger.info(f"HLS is not available on {processing_date}")
         except Exception as e:
             logger.exception(e)
             logger.warning(f"unable to produce coarse NDVI for date {processing_date}")
             missing_coarse_dates |= {processing_date}
 
-        logger.info(f"preparing coarse image for STARS albedo at {cl.place(tile)} on {cl.time(processing_date)}")
-
         try:
-            albedo_coarse_image = generate_albedo_coarse_image(
-                date_UTC=processing_date,
-                VIIRS_connection=albedo_VIIRS_connection,
-                geometry=albedo_coarse_geometry
-            )
+            albedo_coarse_exists = exists(albedo_coarse_filename)
+            if not albedo_coarse_exists:
+                logger.info(f"preparing coarse image for STARS albedo at {cl.place(tile)} on {cl.time(processing_date)}")
 
-            albedo_coarse_filename = generate_filename(
-                directory=albedo_coarse_directory,
-                variable="albedo",
-                date_UTC=processing_date,
-                tile=tile,
-                cell_size=albedo_resolution
-            )
+                albedo_coarse_image = generate_albedo_coarse_image(
+                    date_UTC=processing_date,
+                    VIIRS_connection=albedo_VIIRS_connection,
+                    geometry=albedo_coarse_geometry
+                )
 
-            logger.info(f"saving coarse image for STARS albedo at {cl.place(tile)} on {cl.time(processing_date)}: {albedo_coarse_filename}")
-            albedo_coarse_image.to_geotiff(albedo_coarse_filename)
+                logger.info(f"saving coarse image for STARS albedo at {cl.place(tile)} on {cl.time(processing_date)}: {albedo_coarse_filename}")
+                albedo_coarse_image.to_geotiff(albedo_coarse_filename)
 
             if processing_date >= HLS_start_date:
-                logger.info(f"preparing fine image for STARS albedo at {cl.place(tile)} on {cl.time(processing_date)}")
-
                 try:
-                    albedo_fine_image = generate_albedo_fine_image(
-                        date_UTC=processing_date,
-                        tile=tile,
-                        HLS_connection=HLS_connection
-                    )
+                    if not exists(albedo_fine_filename):
+                        logger.info(f"preparing fine image for STARS albedo at {cl.place(tile)} on {cl.time(processing_date)}")
 
-                    if calibrate_fine:
-                        logger.info(f"calibrating fine image for STARS albedo at {cl.place(tile)} on {cl.time(processing_date)}")
-                        albedo_fine_image = calibrate_fine_to_coarse(albedo_fine_image, albedo_coarse_image)
+                        albedo_fine_image = generate_albedo_fine_image(
+                            date_UTC=processing_date,
+                            tile=tile,
+                            HLS_connection=HLS_connection
+                        )
 
-                    albedo_fine_filename = generate_filename(
-                        directory=albedo_fine_directory,
-                        variable="albedo",
-                        date_UTC=processing_date,
-                        tile=tile,
-                        cell_size=target_resolution
-                    )
+                        if calibrate_fine:
+                            if albedo_coarse_exists:
+                                albedo_coarse_image = Raster.open(albedo_coarse_filename)
 
-                    logger.info(f"saving fine image for STARS albedo at {cl.place(tile)} on {cl.time(processing_date)}: {albedo_fine_filename}")
-                    albedo_fine_image.to_geotiff(albedo_fine_filename)
+                            logger.info(f"calibrating fine image for STARS albedo at {cl.place(tile)} on {cl.time(processing_date)}")
+                            albedo_fine_image = calibrate_fine_to_coarse(albedo_fine_image, albedo_coarse_image)
+
+                        logger.info(f"saving fine image for STARS albedo at {cl.place(tile)} on {cl.time(processing_date)}: {albedo_fine_filename}")
+                        albedo_fine_image.to_geotiff(albedo_fine_filename)
                 except Exception as e:
+                    logger.debug(e)
                     logger.info(f"HLS is not available on {processing_date}")
         except Exception as e:
+            logger.exception(e)
             logger.warning(f"unable to produce coarse albedo for date {processing_date}")
             missing_coarse_dates |= {processing_date}
 
-    coarse_latency_dates = [d for d in missing_coarse_dates if (datetime.utcnow().date() - d).days <= VIIRS_GIVEUP_DAYS]
+    coarse_latency_dates = [d for d in missing_coarse_dates if (datetime.now(timezone.utc).date() - d).days <= VIIRS_GIVEUP_DAYS]
 
     if len(coarse_latency_dates) > 0:
         raise AncillaryLatency(f"missing coarse dates within {VIIRS_GIVEUP_DAYS}-day window: {', '.join([str(d) for d in coarse_latency_dates])}")
@@ -788,8 +822,12 @@ def generate_STARS_inputs(
 def load_prior(
         tile: str,
         target_resolution: int,
+        NDVI_resolution: int,
+        albedo_resolution: int,
         model_directory: str,
-        L2T_STARS_prior_filename: str) -> Prior:
+        L2T_STARS_prior_filename: str,
+        initial_bias_mean: float = 0.0,
+        initial_bias_UQ: float = 0.05) -> Prior:
     using_prior = False
     prior_date_UTC = None
     prior_NDVI_filename = None
@@ -837,21 +875,39 @@ def load_prior(
 
         NDVI_prior_UQ.to_geotiff(prior_NDVI_UQ_filename)
 
+        NDVI_coarse_geometry = SentinelTileGrid(target_resolution=NDVI_resolution).grid(tile=tile)
+
         prior_NDVI_bias_filename = generate_filename(
             directory=prior_tile_date_directory,
             variable="NDVI.bias",
             date_UTC=prior_date_UTC,
             tile=tile,
-            cell_size=target_resolution
+            cell_size=NDVI_resolution
         )
+
+        if not exists(prior_NDVI_bias_filename):
+            logger.info(f"initializing prior NDVI bias raster: {prior_NDVI_bias_filename}")
+            NDVI_prior_bias = Raster(
+                np.full(NDVI_coarse_geometry.shape, initial_bias_mean, dtype=np.float32),
+                geometry=NDVI_coarse_geometry
+            )
+            NDVI_prior_bias.to_geotiff(prior_NDVI_bias_filename)
 
         prior_NDVI_bias_UQ_filename = generate_filename(
             directory=prior_tile_date_directory,
             variable="NDVI.bias.UQ",
             date_UTC=prior_date_UTC,
             tile=tile,
-            cell_size=target_resolution
+            cell_size=NDVI_resolution
         )
+
+        if not exists(prior_NDVI_bias_UQ_filename):
+            logger.info(f"initializing prior NDVI bias UQ raster: {prior_NDVI_bias_UQ_filename}")
+            NDVI_prior_bias_UQ = Raster(
+                np.full(NDVI_coarse_geometry.shape, initial_bias_UQ, dtype=np.float32),
+                geometry=NDVI_coarse_geometry
+            )
+            NDVI_prior_bias_UQ.to_geotiff(prior_NDVI_bias_UQ_filename)
 
         prior_albedo_filename = generate_filename(
             directory=prior_tile_date_directory,
@@ -873,21 +929,39 @@ def load_prior(
 
         albedo_prior_UQ.to_geotiff(prior_albedo_UQ_filename)
 
+        albedo_coarse_geometry = SentinelTileGrid(target_resolution=albedo_resolution).grid(tile=tile)
+
         prior_albedo_bias_filename = generate_filename(
             directory=prior_tile_date_directory,
             variable="albedo.bias",
             date_UTC=prior_date_UTC,
             tile=tile,
-            cell_size=target_resolution
+            cell_size=albedo_resolution
         )
+
+        if not exists(prior_albedo_bias_filename):
+            logger.info(f"initializing prior albedo bias raster: {prior_albedo_bias_filename}")
+            albedo_prior_bias = Raster(
+                np.full(albedo_coarse_geometry.shape, initial_bias_mean, dtype=np.float32),
+                geometry=albedo_coarse_geometry
+            )
+            albedo_prior_bias.to_geotiff(prior_albedo_bias_filename)
 
         prior_albedo_bias_UQ_filename = generate_filename(
             directory=prior_tile_date_directory,
             variable="albedo.bias.UQ",
             date_UTC=prior_date_UTC,
             tile=tile,
-            cell_size=target_resolution
+            cell_size=albedo_resolution
         )
+
+        if not exists(prior_albedo_bias_UQ_filename):
+            logger.info(f"initializing prior albedo bias UQ raster: {prior_albedo_bias_UQ_filename}")
+            albedo_prior_bias_UQ = Raster(
+                np.full(albedo_coarse_geometry.shape, initial_bias_UQ, dtype=np.float32),
+                geometry=albedo_coarse_geometry
+            )
+            albedo_prior_bias_UQ.to_geotiff(prior_albedo_bias_UQ_filename)
 
         using_prior = True
 
@@ -969,7 +1043,7 @@ def process_STARS_product(
         NDVI_resolution: int,
         albedo_resolution: int,
         target_resolution: int,
-        working_directory: str,
+        downsampled_directory: str,
         model_directory: str,
         input_staging_directory: str,
         L2T_STARS_granule_directory: str,
@@ -978,45 +1052,20 @@ def process_STARS_product(
         metadata: dict,
         prior: Prior,
         HLS_connection: HLS2Connection,
-        NDVI_VIIRS_connection: VCD43NRT,
-        albedo_VIIRS_connection: VCD43NRT,
+        NDVI_VIIRS_connection: VIIRSDownloaderNDVI,
+        albedo_VIIRS_connection: VIIRSDownloaderAlbedo = None,
         using_prior: bool = False,
         calibrate_fine: bool = True,
         remove_input_staging: bool = True,
         remove_prior: bool = True,
         remove_posterior: bool = True):
+    if albedo_VIIRS_connection is None:
+        albedo_VIIRS_connection = NDVI_VIIRS_connection
+
     NDVI_coarse_geometry = HLS_connection.grid(tile=tile, cell_size=NDVI_resolution)
     albedo_coarse_geometry = HLS_connection.grid(tile=tile, cell_size=albedo_resolution)
 
     logger.info(f"processing the L2T_STARS product at tile {tile} for date {date_UTC}")
-
-    NDVI_coarse_directory = generate_NDVI_coarse_directory(
-        input_staging_directory=input_staging_directory,
-        tile=tile
-    )
-
-    logger.info(f"staging coarse NDVI images: {NDVI_coarse_directory}")
-
-    NDVI_fine_directory = generate_NDVI_fine_directory(
-        input_staging_directory=input_staging_directory,
-        tile=tile
-    )
-
-    logger.info(f"staging fine NDVI images: {NDVI_fine_directory}")
-
-    albedo_coarse_directory = generate_albedo_coarse_directory(
-        input_staging_directory=input_staging_directory,
-        tile=tile
-    )
-
-    logger.info(f"staging coarse albedo images: {albedo_coarse_directory}")
-
-    albedo_fine_directory = generate_albedo_fine_directory(
-        input_staging_directory=input_staging_directory,
-        tile=tile
-    )
-
-    logger.info(f"staging fine albedo images: {albedo_fine_directory}")
 
     posterior_tile_date_directory = generate_model_state_tile_date_directory(
         model_directory=model_directory,
@@ -1038,11 +1087,7 @@ def process_STARS_product(
         target_resolution=target_resolution,
         NDVI_coarse_geometry=NDVI_coarse_geometry,
         albedo_coarse_geometry=albedo_coarse_geometry,
-        working_directory=working_directory,
-        NDVI_coarse_directory=NDVI_coarse_directory,
-        NDVI_fine_directory=NDVI_fine_directory,
-        albedo_coarse_directory=albedo_coarse_directory,
-        albedo_fine_directory=albedo_fine_directory,
+        downsampled_directory=downsampled_directory,
         HLS_connection=HLS_connection,
         NDVI_VIIRS_connection=NDVI_VIIRS_connection,
         albedo_VIIRS_connection=albedo_VIIRS_connection,
@@ -1074,7 +1119,7 @@ def process_STARS_product(
         variable="NDVI.bias",
         date_UTC=date_UTC,
         tile=tile,
-        cell_size=target_resolution
+        cell_size=NDVI_resolution
     )
 
     logger.info(f"posterior NDVI bias file: {posterior_NDVI_bias_filename}")
@@ -1084,7 +1129,7 @@ def process_STARS_product(
         variable="NDVI.bias.UQ",
         date_UTC=date_UTC,
         tile=tile,
-        cell_size=target_resolution
+        cell_size=NDVI_resolution
     )
 
     logger.info(f"posterior NDVI bias UQ file: {posterior_NDVI_bias_UQ_filename}")
@@ -1098,8 +1143,8 @@ def process_STARS_product(
             VIIRS_end_date=VIIRS_end_date,
             HLS_start_date=HLS_start_date,
             HLS_end_date=HLS_end_date,
-            coarse_directory=NDVI_coarse_directory,
-            fine_directory=NDVI_fine_directory,
+            downsampled_directory=downsampled_directory,
+            product_name="NDVI",
             posterior_filename=posterior_NDVI_filename,
             posterior_UQ_filename=posterior_NDVI_UQ_filename,
             posterior_bias_filename=posterior_NDVI_bias_filename,
@@ -1118,8 +1163,8 @@ def process_STARS_product(
             VIIRS_end_date=VIIRS_end_date,
             HLS_start_date=HLS_start_date,
             HLS_end_date=HLS_end_date,
-            coarse_directory=NDVI_coarse_directory,
-            fine_directory=NDVI_fine_directory,
+            downsampled_directory=downsampled_directory,
+            product_name="NDVI",
             posterior_filename=posterior_NDVI_filename,
             posterior_UQ_filename=posterior_NDVI_UQ_filename,
             posterior_bias_filename=posterior_NDVI_bias_filename,
@@ -1150,7 +1195,7 @@ def process_STARS_product(
         variable="albedo.bias",
         date_UTC=date_UTC,
         tile=tile,
-        cell_size=target_resolution
+        cell_size=albedo_resolution
     )
 
     posterior_albedo_bias_UQ_filename = generate_filename(
@@ -1158,7 +1203,7 @@ def process_STARS_product(
         variable="albedo.bias.UQ",
         date_UTC=date_UTC,
         tile=tile,
-        cell_size=target_resolution
+        cell_size=albedo_resolution
     )
 
     if using_prior:
@@ -1170,8 +1215,8 @@ def process_STARS_product(
             VIIRS_end_date=VIIRS_end_date,
             HLS_start_date=HLS_start_date,
             HLS_end_date=HLS_end_date,
-            coarse_directory=albedo_coarse_directory,
-            fine_directory=albedo_fine_directory,
+            downsampled_directory=downsampled_directory,
+            product_name="albedo",
             posterior_filename=posterior_albedo_filename,
             posterior_UQ_filename=posterior_albedo_UQ_filename,
             posterior_bias_filename=posterior_albedo_bias_filename,
@@ -1190,8 +1235,8 @@ def process_STARS_product(
             VIIRS_end_date=VIIRS_end_date,
             HLS_start_date=HLS_start_date,
             HLS_end_date=HLS_end_date,
-            coarse_directory=albedo_coarse_directory,
-            fine_directory=albedo_fine_directory,
+            downsampled_directory=downsampled_directory,
+            product_name="albedo",
             posterior_filename=posterior_albedo_filename,
             posterior_UQ_filename=posterior_albedo_UQ_filename,
             posterior_bias_filename=posterior_albedo_bias_filename,
@@ -1252,19 +1297,20 @@ def process_STARS_product(
         granule.write_browse_image(
             PNG_filename=L2T_STARS_browse_filename)
 
-    logger.info(f"re-writing posterior NDVI: {posterior_NDVI_filename}")
-    Raster.open(posterior_NDVI_filename, cmap=NDVI_COLORMAP).to_geotiff(posterior_NDVI_filename)
-    logger.info(f"re-writing posterior NDVI UQ: {posterior_NDVI_UQ_filename}")
-    Raster.open(posterior_NDVI_UQ_filename, cmap=NDVI_COLORMAP).to_geotiff(posterior_NDVI_UQ_filename)
+    if not remove_posterior:
+        logger.info(f"re-writing posterior NDVI: {posterior_NDVI_filename}")
+        Raster.open(posterior_NDVI_filename, cmap=NDVI_COLORMAP).to_geotiff(posterior_NDVI_filename)
+        logger.info(f"re-writing posterior NDVI UQ: {posterior_NDVI_UQ_filename}")
+        Raster.open(posterior_NDVI_UQ_filename, cmap=NDVI_COLORMAP).to_geotiff(posterior_NDVI_UQ_filename)
+        logger.info(f"re-writing posterior albedo: {posterior_albedo_filename}")
+        Raster.open(posterior_albedo_filename, cmap=ALBEDO_COLORMAP).to_geotiff(posterior_albedo_filename)
+        logger.info(f"re-writing posterior albedo UQ: {posterior_albedo_UQ_filename}")
+        Raster.open(posterior_albedo_UQ_filename, cmap=ALBEDO_COLORMAP).to_geotiff(posterior_albedo_UQ_filename)
+
     logger.info(f"re-writing posterior NDVI bias: {posterior_NDVI_bias_filename}")
     Raster.open(posterior_NDVI_bias_filename, cmap=NDVI_COLORMAP).to_geotiff(posterior_NDVI_bias_filename)
     logger.info(f"re-writing posterior NDVI bias UQ: {posterior_NDVI_bias_UQ_filename}")
     Raster.open(posterior_NDVI_bias_UQ_filename, cmap=NDVI_COLORMAP).to_geotiff(posterior_NDVI_bias_UQ_filename)
-
-    logger.info(f"re-writing posterior albedo: {posterior_albedo_filename}")
-    Raster.open(posterior_albedo_filename, cmap=ALBEDO_COLORMAP).to_geotiff(posterior_albedo_filename)
-    logger.info(f"re-writing posterior albedo UQ: {posterior_albedo_UQ_filename}")
-    Raster.open(posterior_albedo_UQ_filename, cmap=ALBEDO_COLORMAP).to_geotiff(posterior_albedo_UQ_filename)
     logger.info(f"re-writing posterior albedo bias: {posterior_albedo_bias_filename}")
     Raster.open(posterior_albedo_bias_filename, cmap=ALBEDO_COLORMAP).to_geotiff(posterior_albedo_bias_filename)
     logger.info(f"re-writing posterior albedo bias UQ: {posterior_albedo_bias_UQ_filename}")
@@ -1272,7 +1318,7 @@ def process_STARS_product(
 
     if remove_input_staging:
         logger.info(f"removing input staging directory: {input_staging_directory}")
-        shutil.rmtree(input_staging_directory)
+        shutil.rmtree(input_staging_directory, ignore_errors=True)
 
     if using_prior and remove_prior:
         if exists(prior.prior_NDVI_filename):
@@ -1339,6 +1385,8 @@ def L2T_STARS(
         remove_posterior: bool = True) -> int:
     """
     ECOSTRESS Collection 2 L2G L2T LSTE PGE
+    :param runconfig_filename: filename for XML run-config
+    :return: exit code number
     """
     exit_code = SUCCESS_EXIT_CODE
 
@@ -1427,6 +1475,8 @@ def L2T_STARS(
         prior = load_prior(
             tile=tile,
             target_resolution=target_resolution,
+            NDVI_resolution=NDVI_resolution,
+            albedo_resolution=albedo_resolution,
             model_directory=model_directory,
             L2T_STARS_prior_filename=L2T_STARS_prior_filename
         )
@@ -1452,6 +1502,10 @@ def L2T_STARS(
         logger.info(f"VNP09GA products directory: {cl.dir(VNP09GA_products_directory)}")
         VNP43NRT_products_directory = join(sources_directory, DEFAULT_VNP43NRT_PRODUCTS_DIRECTORY)
         logger.info(f"VNP43NRT products directory: {cl.dir(VNP43NRT_products_directory)}")
+        VCD43NRT_products_directory = join(sources_directory, DEFAULT_VCD43NRT_PRODUCTS_DIRECTORY)
+        logger.info(f"VCD43NRT products directory: {cl.dir(VCD43NRT_products_directory)}")
+
+        DOWNSAMPLED_products_directory = join(sources_directory, DEFAULT_STARS_DOWNSAMPLED_DIRECTORY)
 
         if exists(L2T_STARS_zip_filename):
             logger.info(
@@ -1470,23 +1524,22 @@ def L2T_STARS(
             raise AncillaryServerUnreachable(
                 f"unable to connect to CMR Search server: {CMR_SEARCH_URL}")
 
-        if HLS_connection.tile_grid is not None and not HLS_connection.tile_grid.land(tile=tile):
+        if not SentinelTileGrid(target_resolution=target_resolution).land(tile=tile):
             raise LandFilter(f"Sentinel tile {tile} is not on land")
 
         try:
-            NDVI_VIIRS_connection = VCD43NRT(
+            VIIRS_connection = VCD43NRT(
                 working_directory=working_directory,
-                download_directory=VIIRS_download_directory
+                download_directory=VIIRS_download_directory,
+                mosaic_directory=VIIRS_mosaic_directory,
+                GEOS5FP_download=GEOS5FP_download_directory,
+                VNP09GA_directory=VNP09GA_products_directory,
+                VCD43NRT_directory=VCD43NRT_products_directory
             )
-
-            albedo_VIIRS_connection = VCD43NRT(
-                working_directory=working_directory,
-                download_directory=VIIRS_download_directory
-            )
-        except Exception as e:
+        except CMRServerUnreachable as e:
             logger.exception(e)
             raise AncillaryServerUnreachable(
-                f"unable to initialize VCD43NRT connection")
+                f"unable to connect to CMR search server")
 
         end_date = date_UTC
         VIIRS_start_date = end_date - timedelta(days=spinup_days)
@@ -1518,7 +1571,7 @@ def L2T_STARS(
         except Exception as e:
             logger.exception(e)
             raise AncillaryServerUnreachable(
-                f"unable to scan Harmonized Landsat Sentinel server: {HLS_connection.remote}")
+                f"unable to scan Harmonized Landsat Sentinel server: {HLS_connection.URL}")
 
         missing_sentinel_dates = HLS_listing[HLS_listing.sentinel == "missing"].date_UTC
 
@@ -1529,9 +1582,9 @@ def L2T_STARS(
         sentinel_listing = HLS_listing[~pd.isna(HLS_listing.sentinel)][["date_UTC", "sentinel"]]
 
         logger.info(f"HLS Sentinel is available on {cl.val(len(sentinel_listing))} dates:")
-        for i, (date_UTC, sentinel_granule) in sentinel_listing.iterrows():
+        for i, (HLS_date_UTC, sentinel_granule) in sentinel_listing.iterrows():
             sentinel_filename = sentinel_granule["meta"]["native-id"]
-            logger.info(f"* {cl.time(date_UTC)}: {cl.file(sentinel_filename)}")
+            logger.info(f"* {cl.time(HLS_date_UTC)}: {cl.file(sentinel_filename)}")
 
         missing_landsat_dates = HLS_listing[HLS_listing.landsat == "missing"].date_UTC
 
@@ -1542,9 +1595,9 @@ def L2T_STARS(
         landsat_listing = HLS_listing[~pd.isna(HLS_listing.landsat)][["date_UTC", "landsat"]]
 
         logger.info(f"HLS landsat is available on {cl.val(len(landsat_listing))} dates:")
-        for i, (date_UTC, landsat_granule) in landsat_listing.iterrows():
+        for i, (HLS_date_UTC, landsat_granule) in landsat_listing.iterrows():
             landsat_filename = landsat_granule["meta"]["native-id"]
-            logger.info(f"* {cl.time(date_UTC)}: {cl.file(landsat_filename)}")
+            logger.info(f"* {cl.time(HLS_date_UTC)}: {cl.file(landsat_filename)}")
 
         if sources_only:
             retrieve_STARS_sources(
@@ -1555,7 +1608,7 @@ def L2T_STARS(
                 VIIRS_start_date=VIIRS_download_start_date,
                 VIIRS_end_date=VIIRS_end_date,
                 HLS_connection=HLS_connection,
-                VIIRS_connection=NDVI_VIIRS_connection,
+                VIIRS_connection=VIIRS_connection,
             )
 
             NDVI_coarse_geometry = HLS_connection.grid(tile=tile, cell_size=NDVI_resolution)
@@ -1611,17 +1664,21 @@ def L2T_STARS(
                 target_resolution=target_resolution,
                 NDVI_coarse_geometry=NDVI_coarse_geometry,
                 albedo_coarse_geometry=albedo_coarse_geometry,
-                working_directory=working_directory,
-                NDVI_coarse_directory=NDVI_coarse_directory,
-                NDVI_fine_directory=NDVI_fine_directory,
-                albedo_coarse_directory=albedo_coarse_directory,
-                albedo_fine_directory=albedo_fine_directory,
+                downsampled_directory=DOWNSAMPLED_products_directory,
                 HLS_connection=HLS_connection,
-                NDVI_VIIRS_connection=NDVI_VIIRS_connection,
-                albedo_VIIRS_connection=albedo_VIIRS_connection,
+                NDVI_VIIRS_connection=VIIRS_connection,
+                albedo_VIIRS_connection=VIIRS_connection,
                 calibrate_fine=calibrate_fine
             )
         else:
+            logger.info(
+                f"prefetching VIIRS sources for tile {cl.place(tile)} from {cl.time(VIIRS_download_start_date)} to {cl.time(VIIRS_end_date)}")
+            VIIRS_connection.prefetch_VNP09GA(
+                start_date=VIIRS_download_start_date,
+                end_date=VIIRS_end_date,
+                geometry=geometry,
+            )
+
             process_STARS_product(
                 tile=tile,
                 date_UTC=date_UTC,
@@ -1635,7 +1692,7 @@ def L2T_STARS(
                 NDVI_resolution=NDVI_resolution,
                 albedo_resolution=albedo_resolution,
                 target_resolution=target_resolution,
-                working_directory=working_directory,
+                downsampled_directory=DOWNSAMPLED_products_directory,
                 model_directory=model_directory,
                 input_staging_directory=input_staging_directory,
                 L2T_STARS_granule_directory=L2T_STARS_granule_directory,
@@ -1644,8 +1701,8 @@ def L2T_STARS(
                 metadata=metadata,
                 prior=prior,
                 HLS_connection=HLS_connection,
-                NDVI_VIIRS_connection=NDVI_VIIRS_connection,
-                albedo_VIIRS_connection=albedo_VIIRS_connection,
+                NDVI_VIIRS_connection=VIIRS_connection,
+                albedo_VIIRS_connection=VIIRS_connection,
                 using_prior=using_prior,
                 calibrate_fine=calibrate_fine,
                 remove_input_staging=remove_input_staging,
