@@ -184,15 +184,478 @@ compare.py
 development_plan_aligning_ecov002_l2t_stars_with_ecostress_collection_2.md
 example_L2T_STARS_with_download.py
 geos5fp.py
+known_deficiencies_maintained_in_stars_collection_2_for_lom_record_consistency.md
 LICENSE
 makefile
 pyproject.toml
 README.md
 repomix_for_submodule_from_another_package_that_we_need_to_replicate.xml
+stars_rust_pyo3_translation_development_notes.md
 </directory_structure>
 
 <files>
 This section contains the contents of the repository's files.
+
+<file path=".github/workflows/python-publish.yml">
+# This workflow will upload a Python Package using Twine when a release is created
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
+
+# This workflow uses actions that are not certified by GitHub.
+# They are provided by a third-party and are governed by
+# separate terms of service, privacy policy, and support
+# documentation.
+
+name: Upload Python Package
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Set up Python
+      uses: actions/setup-python@v3
+      with:
+        python-version: '3.x'
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install build
+    - name: Build package
+      run: python -m build
+    - name: Publish package
+      uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
+      with:
+        user: __token__
+        password: ${{ secrets.PYPI_API_TOKEN }}
+</file>
+
+<file path="ECOv002_L2T_STARS/daterange/__init__.py">
+from .daterange import *
+</file>
+
+<file path="ECOv002_L2T_STARS/daterange/daterange.py">
+import datetime
+import logging
+from typing import List, Union
+
+from dateutil import parser
+
+logger = logging.getLogger(__name__)
+
+
+def get_date(dt: Union[datetime.date, datetime.datetime, str]) -> datetime.date or None:
+    if dt is None:
+        return None
+    elif isinstance(dt, datetime.datetime):
+        return dt.date()
+    elif isinstance(dt, datetime.date):
+        return dt
+    elif isinstance(dt, str):
+        return parser.parse(dt).date()
+    else:
+        raise ValueError(f"invalid date type: {type(dt)}")
+
+
+def date_range(start: Union[datetime.date, str], end: Union[datetime.date, str]) -> List[datetime.date]:
+    start = get_date(start)
+    end = get_date(end)
+
+    try:
+        count = (end - start).days
+    except TypeError as e:
+        logger.exception(e)
+        raise TypeError(f"start type: {type(start)} end type: {type(end)}")
+
+    dates = [start + datetime.timedelta(days=days) for days in range(count + 1)]
+
+    return dates
+</file>
+
+<file path="ECOv002_L2T_STARS/timer/__init__.py">
+from .timer import *
+</file>
+
+<file path="ECOv002_L2T_STARS/timer/timer.py">
+"""
+This is a minimalistic performance timer.
+"""
+import time
+
+__author__ = "Gregory Halverson"
+
+DEFAULT_FORMAT = "0.2f"
+
+class Timer(object):
+    """
+    This is a minimalistic performance timer.
+    """
+
+    def __init__(self):
+        self._start_time = None
+        self._end_time = None
+        self.start()
+
+    def __enter__(self, *args, **kwargs):
+        self.start()
+        return self
+
+    def __exit__(self, *args, **kwargs):
+        self.end()
+
+    def __repr__(self):
+        # print("Timer.__repr__")
+        return self.__format__(format_string=DEFAULT_FORMAT)
+
+    def __str__(self):
+        # print("Timer.__str__")
+        return self.__repr__()
+
+    def __format__(self, format_string=DEFAULT_FORMAT):
+        if format_string is None or format_string == "":
+            format_string = DEFAULT_FORMAT
+
+        return format(self.duration, format_string)
+
+    @property
+    def now(self):
+        # return datetime.now()
+        return time.perf_counter()
+
+    def start(self):
+        self._start_time = self.now
+
+        return self.start_time
+
+    @property
+    def start_time(self):
+        return self._start_time
+
+    def end(self):
+        self._end_time = self.now
+
+        return self.end_time
+
+    @property
+    def end_time(self):
+        return self._end_time
+
+    @property
+    def duration(self):
+        if self.start_time is None:
+            raise Exception("timer never started")
+
+        if self.end_time is None:
+            end_time = self.now
+        else:
+            end_time = self.end_time
+
+        duration = end_time - self.start_time
+
+        return duration
+</file>
+
+<file path="ECOv002_L2T_STARS/exit_codes.py">
+"""
+ECOSTRESS Collection 2 Exit Codes
+https://wiki.jpl.nasa.gov/pages/viewpage.action?pageId=442764459
+"""
+__author__ = "Gregory Halverson"
+
+SUCCESS_EXIT_CODE = 0
+UNCLASSIFIED_FAILURE_EXIT_CODE = 1
+RUNCONFIG_FILENAME_NOT_SUPPLIED = 2
+UNABLE_TO_OPEN_RUNCONFIG_FILE = 3
+UNABLE_TO_PARSE_RUNCONFIG_FILE = 4
+CORRUPTED_RUNCONFIG_STRUCTURE = 5
+MISSING_RUNCONFIG_VALUE = 6
+FILESYSTEM_INACCESSIBLE = 7
+INPUT_FILES_INACCESSIBLE = 8
+UNCALIBRATED_GEOLOCATION = 9
+INVALID_COORDINATES = 10
+LAND_FILTER = 11
+DAYTIME_FILTER = 12
+CONUS_FILTER = 13
+ANCILLARY_SERVER_UNREACHABLE = 14
+ANCILLARY_LATENCY = 15
+DOWNLOAD_FAILED = 16
+BLANK_OUTPUT = 17
+PRODUCT_WRITE_FAILED = 18
+
+
+class ECOSTRESSExitCodeException(Exception):
+    """
+    This is the base class for all ECOSTRESS exceptions with an exit code.
+    """
+    exit_code = UNCLASSIFIED_FAILURE_EXIT_CODE
+
+
+class RunConfigFilenameNotSupplied(ECOSTRESSExitCodeException):
+    """
+    Run config filename argument not supplied in PGE call
+    """
+    exit_code = RUNCONFIG_FILENAME_NOT_SUPPLIED
+
+
+class UnableToOpenRunConfig(ECOSTRESSExitCodeException):
+    """
+    Unable to open run config file
+    """
+    exit_code = UNABLE_TO_OPEN_RUNCONFIG_FILE
+
+
+class UnableToParseRunConfig(ECOSTRESSExitCodeException):
+    """
+    Unable to parse run config file
+    """
+    exit_code = UNABLE_TO_PARSE_RUNCONFIG_FILE
+
+
+class CorruptedRunConfigStructure(ECOSTRESSExitCodeException):
+    """
+    Structure of run config data is corrupted
+    """
+    exit_code = CORRUPTED_RUNCONFIG_STRUCTURE
+
+
+class MissingRunConfigValue(ECOSTRESSExitCodeException):
+    """
+    Missing value in run config file
+    """
+    exit_code = MISSING_RUNCONFIG_VALUE
+
+
+class FilesystemInaccessible(ECOSTRESSExitCodeException):
+    """
+    Unable to access directory listed in StaticAncillaryFileGroup
+    """
+    exit_code = FILESYSTEM_INACCESSIBLE
+
+
+class InputFilesInaccessible(ECOSTRESSExitCodeException):
+    """
+    Unable to access input product files listed in InputFileGroup
+    """
+    exit_code = INPUT_FILES_INACCESSIBLE
+
+
+class UncalibratedGeolocation(ECOSTRESSExitCodeException):
+    """
+    ECOSTRESS scene rejected because L1B GEO file set OrbitCorrectionPerformed to false
+    """
+    exit_code = UNCALIBRATED_GEOLOCATION
+
+
+class InvalidCoordinates(ECOSTRESSExitCodeException):
+    """
+    ECOSTRESS scene rejected because L1B GEO geolocation arrays contain coordinates outside the valid range of -90 to 90 latitude, -180 to 180 longitude, or the range of either exceeds 10 degrees
+    """
+    exit_code = INVALID_COORDINATES
+
+
+class LandFilter(ECOSTRESSExitCodeException):
+    """
+    ECOSTRESS scene rejected because L1B metadata reports no land pixels covered
+    """
+    exit_code = LAND_FILTER
+
+
+class DaytimeFilter(ECOSTRESSExitCodeException):
+    """
+    ECOSTRESS scene rejected because StandardMetadata/DayNightFlag attribute in the L2T_LSTE input product contains a value other than Day.
+    """
+    exit_code = DAYTIME_FILTER
+
+
+class CONUSFilter(ECOSTRESSExitCodeException):
+    """
+    ECOSTRESS scene rejected the granule does not cover CONUS. In the case that an ECOSTRESS Orbit/Scene granule is on the edge of the CONUS boundary, some of the the L3T_L4T_ALEXI tiles may succeed while others return this exit code. The tiles that do succeed can still be mosaicked by L3G_L4G_ALEXI.
+    """
+    exit_code = CONUS_FILTER
+
+
+class AncillaryServerUnreachable(ECOSTRESSExitCodeException):
+    """
+    This exit code reports that a connection could not be made to one of the remote servers hosting ancillary data. Sometimes these servers are down for maintenance for a few hours at a time.
+    """
+    exit_code = ANCILLARY_SERVER_UNREACHABLE
+
+
+class AncillaryLatency(ECOSTRESSExitCodeException):
+    """
+    This exit code reports that a required granule from an ancillary data source is not yet available.
+    """
+    exit_code = ANCILLARY_LATENCY
+
+
+class DownloadFailed(ECOSTRESSExitCodeException):
+    """
+    This exit code reports that the file transfer for an ancillary file from the remote server to the local filesystem failed. This can happen intermittently, but if it happens persistently, then the security or API of the remote server may have made a breaking change.
+    """
+    exit_code = DOWNLOAD_FAILED
+
+
+class BlankOutput(ECOSTRESSExitCodeException):
+    """
+    This exit code reports that the output images contained only no-data values and were not written to a product file.
+    """
+    exit_code = BLANK_OUTPUT
+
+
+class ProductWriteFailed(ECOSTRESSExitCodeException):
+    """
+    This exit code reports that the PGE was unable to write its product file.
+    """
+    exit_code = PRODUCT_WRITE_FAILED
+</file>
+
+<file path="ECOv002_L2T_STARS/L2T_STARS.xml">
+<?xml version="1.0" encoding="UTF-8"?>
+<input xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+       xmlns:xalan="http://xml.apache.org/xslt"
+       xmlns:cas="http://oodt.jpl.nasa.gov/1.0/cas"
+       xsi:noNamespaceSchemaLocation="">
+    <group name="LogMetadata">
+        <vector name="CommandLineParameters">
+            <element>executable_filename</element>
+            <element>runconfig_filename</element>
+            <element>log_filename</element>
+        </vector>
+    </group>
+    <group name="JobIdentification">
+        <scalar name="ProductionLocation">ECOSTRESS Science Computing Facility</scalar>
+        <scalar name="TaskId">urn:ecostress:L2GL2TLSTETask</scalar>
+        <scalar name="ProcessingNode">processing_node</scalar>
+        <scalar name="ProductionDateTime">production_datetime</scalar>
+        <scalar name="JobId">job_ID</scalar>
+        <scalar name="WorkflowInstanceId">instance_ID</scalar>
+    </group>
+    <group name="InputFileGroup">
+        <scalar name="L2T_LSTE">L2T_LSTE_filename</scalar>
+        <scalar name="L2T_STARS_PRIOR">prior_L2T_STARS_filename</scalar>
+    </group>
+    <group name="StaticAncillaryFileGroup">
+        <scalar name="L2T_STARS_MODEL">model_directory</scalar>
+        <scalar name="L2T_STARS_INDICES">indices_directory</scalar>
+        <scalar name="L2T_STARS_SOURCES">sources_directory</scalar>
+        <scalar name="L2T_STARS_WORKING">working_directory</scalar>
+    </group>
+    <group name="PrimaryExecutable">
+        <scalar name="BuildID">build_ID</scalar>
+        <scalar name="FullPathname">executable_filename</scalar>
+    </group>
+    <group name="Geometry">
+        <scalar name="TileId">tile_ID</scalar>
+        <scalar name="SceneId">scene_ID</scalar>
+        <scalar name="OrbitNumber">orbit_number</scalar>
+    </group>
+    <group name="ProductPathGroup">
+        <scalar name="ProductCounter">product_counter</scalar>
+        <scalar name="ProductPath">output_directory</scalar>
+    </group>
+    <group name="PGENameGroup">
+        <scalar name="PGEName">L2T_STARS_PGE</scalar>
+    </group>
+</input>
+</file>
+
+<file path="ECOv002_L2T_STARS/PGEVersion.py">
+from os.path import join, abspath, dirname
+
+with open(join(abspath(dirname(__file__)), 'PGEVersion.txt')) as f:
+    PGEVersion = f.read().strip()
+</file>
+
+<file path="ECOv002_L2T_STARS/PGEVersion.txt">
+v1.13.1
+</file>
+
+<file path="ECOv002_L2T_STARS/runconfig.py">
+import logging
+from os.path import exists
+
+import untangle
+
+from .exit_codes import UnableToOpenRunConfig, UnableToParseRunConfig, ECOSTRESSExitCodeException
+
+logger = logging.getLogger(__name__)
+
+__author__ = 'Gregory Halverson'
+
+
+def parse_scalar(scalar):
+    return scalar.cdata
+
+
+def parse_vector(vector):
+    data = [
+        element.cdata
+        for element
+        in vector.children
+    ]
+
+    return data
+
+
+def parse_group(group):
+    result = {}
+
+    if hasattr(group, 'scalar'):
+        for element in group.scalar:
+            result[element['name']] = parse_scalar(element)
+
+    if hasattr(group, 'vector'):
+        for element in group.vector:
+            result[element['name']] = parse_vector(element)
+
+    if hasattr(group, 'group'):
+        for element in group.group:
+            result[element['name']] = parse_group(element)
+
+    return result
+
+
+def parse_runconfig(text: str) -> dict:
+    tree = untangle.parse(text)
+    config = parse_group(tree.input)
+
+    return config
+
+
+def read_runconfig(filename: str) -> dict:
+    if not exists(filename):
+        raise UnableToOpenRunConfig(f"run-config file does not exist: {filename}")
+
+    try:
+        tree = untangle.parse(filename)
+        config = parse_group(tree.input)
+    except ECOSTRESSExitCodeException as e:
+        raise e
+    except Exception as e:
+        logger.exception(e)
+        raise UnableToParseRunConfig(f"unable to parse run-config file: {filename}")
+
+    return config
+
+
+class ECOSTRESSRunConfig:
+    def read_runconfig(self, filename: str) -> dict:
+        return read_runconfig(filename)
+</file>
+
+<file path="ECOv002_L2T_STARS/version.py">
+from importlib.metadata import version
+
+__version__ = version("ecov002-l2t-stars")
+</file>
 
 <file path="test_bundle/ECOv002_L2T_STARS_11SPS_20261027_0700_01/ECOv002_L2T_STARS_11SPS_20261027_0700_01_albedo-UQ.jpeg.aux.xml">
 <PAMDataset>
@@ -1051,6 +1514,206 @@ This section contains the contents of the repository's files.
     }
   ]
 }
+</file>
+
+<file path="tests/test_viirs_ecostress.py">
+from datetime import date
+from pathlib import Path
+
+import h5py
+import numpy as np
+import pytest
+from rasters import Raster
+from modland import generate_modland_grid
+
+from ECOv002_L2T_STARS.VIIRS.VIIRSDataPool import (
+    VIIRSGranule,
+    parse_VIIRS_build,
+    parse_VIIRS_date,
+    parse_VIIRS_product,
+    parse_VIIRS_tile,
+)
+from ECOv002_L2T_STARS.VIIRS.VNP09GA import VNP09GAGranule
+from ECOv002_L2T_STARS.VIIRS.VNP43IA4 import VNP43IA4, VNP43IA4Granule
+from ECOv002_L2T_STARS.VIIRS.VNP43MA3 import VNP43MA3, VNP43MA3Granule
+from ECOv002_L2T_STARS.VNP43NRT.VNP43NRT import VNP43NRTGranule
+
+
+def test_parse_viirs_helpers():
+    filename = "VNP43MA3.A2024345.h08v05.001.2024345.h5"
+
+    assert parse_VIIRS_product(filename) == "VNP43MA3"
+    assert parse_VIIRS_date(filename) == date(2024, 12, 10)
+    assert parse_VIIRS_tile(filename) == "h08v05"
+    assert parse_VIIRS_build(filename) == 1
+
+
+def test_viirs_granule_paths_and_metadata(tmp_path):
+    filename = tmp_path / "VNP43MA3.A2024345.h08v05.001.h5"
+    filename.write_bytes(b"")
+
+    granule = VIIRSGranule(
+        filename=str(filename),
+        working_directory=str(tmp_path),
+        products_directory=str(tmp_path / "products"),
+    )
+
+    assert granule.tile == "h08v05"
+    assert granule.h == 8
+    assert granule.v == 5
+    assert granule.date_UTC.date() == date(2024, 12, 10)
+    assert granule.product_directory("albedo") == str(tmp_path / "products" / "albedo" / "2024.12.10")
+    assert granule.product_filename("albedo").endswith("VNP43MA3.A2024345.h08v05.001_albedo.tif")
+
+
+def test_vnp43nrt_granule_tracks_expected_outputs(tmp_path):
+    granule_directory = tmp_path / "VNP43NRT_A2024345_h08v05"
+    granule_directory.mkdir()
+
+    required_files = [
+        "VNP43NRT_A2024345_h08v05_NDVI.tif",
+        "VNP43NRT_A2024345_h08v05_NBAR_I1.tif",
+        "VNP43NRT_A2024345_h08v05_NBAR_I2.tif",
+        "VNP43NRT_A2024345_h08v05_albedo.tif",
+        "VNP43NRT_A2024345_h08v05_BSA_M1.tif",
+        "VNP43NRT_A2024345_h08v05_WSA_M1.tif",
+        "VNP43NRT_A2024345_h08v05_BSA_M2.tif",
+        "VNP43NRT_A2024345_h08v05_WSA_M2.tif",
+        "VNP43NRT_A2024345_h08v05_BSA_M3.tif",
+        "VNP43NRT_A2024345_h08v05_WSA_M3.tif",
+        "VNP43NRT_A2024345_h08v05_BSA_M4.tif",
+        "VNP43NRT_A2024345_h08v05_WSA_M4.tif",
+        "VNP43NRT_A2024345_h08v05_BSA_M5.tif",
+        "VNP43NRT_A2024345_h08v05_WSA_M5.tif",
+        "VNP43NRT_A2024345_h08v05_BSA_M7.tif",
+        "VNP43NRT_A2024345_h08v05_WSA_M7.tif",
+        "VNP43NRT_A2024345_h08v05_BSA_M8.tif",
+        "VNP43NRT_A2024345_h08v05_WSA_M8.tif",
+        "VNP43NRT_A2024345_h08v05_BSA_M10.tif",
+        "VNP43NRT_A2024345_h08v05_WSA_M10.tif",
+        "VNP43NRT_A2024345_h08v05_BSA_M11.tif",
+        "VNP43NRT_A2024345_h08v05_WSA_M11.tif",
+    ]
+
+    for filename in required_files:
+        (granule_directory / filename).touch()
+
+    granule = VNP43NRTGranule(str(granule_directory))
+
+    assert granule.granule_ID == "VNP43NRT_A2024345_h08v05"
+    assert granule.tile == "h08v05"
+    assert granule.h == 8
+    assert granule.v == 5
+    assert granule.date_UTC.date() == date(2024, 12, 10)
+    assert granule.complete is True
+    assert granule.variable_filename("NDVI").endswith("VNP43NRT_A2024345_h08v05_NDVI.tif")
+
+
+def test_vnp09ga_cloud_mask_from_qf1(tmp_path):
+    filename = tmp_path / "VNP09GA.A2024345.h08v05.002.h5"
+
+    with h5py.File(filename, "w") as f:
+        dataset = f.create_dataset(
+            "HDFEOS/GRIDS/VIIRS_Grid_1km_2D/Data Fields/SurfReflect_QF1_1",
+            data=np.array([[0, 4], [0, 12]], dtype=np.uint16),
+            shape=(2, 2),
+        )
+        dataset.attrs["_FillValue"] = 65535
+
+    granule = VNP09GAGranule(
+        filename=str(filename),
+        working_directory=str(tmp_path),
+        products_directory=str(tmp_path / "products"),
+    )
+
+    mask = granule.get_cloud_mask(target_shape=(2, 2))
+
+    assert mask.shape == (2, 2)
+    assert np.asarray(mask).tolist() == [[False, True], [False, True]]
+
+
+def test_vnp43ia4_granule_reflectance_and_ndvi(tmp_path):
+    filename = tmp_path / "VNP43IA4.A2024345.h08v05.001.h5"
+
+    with h5py.File(filename, "w") as f:
+        red = f.create_dataset(
+            "HDFEOS/GRIDS/VIIRS_Grid_BRDF/Data Fields/Nadir_Reflectance_I1",
+            data=np.array([[100, 200], [300, 400]], dtype=np.uint16),
+        )
+        red.attrs["_FillValue"] = 32767
+
+        nir = f.create_dataset(
+            "HDFEOS/GRIDS/VIIRS_Grid_BRDF/Data Fields/Nadir_Reflectance_I2",
+            data=np.array([[200, 300], [400, 500]], dtype=np.uint16),
+        )
+        nir.attrs["_FillValue"] = 32767
+
+        qa = f.create_dataset(
+            "HDFEOS/GRIDS/VIIRS_Grid_BRDF/Data Fields/BRDF_Albedo_Band_Mandatory_Quality_I1",
+            data=np.array([[0, 0], [0, 0]], dtype=np.uint8),
+        )
+        qa.attrs["_FillValue"] = 255
+
+        qa_2 = f.create_dataset(
+            "HDFEOS/GRIDS/VIIRS_Grid_BRDF/Data Fields/BRDF_Albedo_Band_Mandatory_Quality_I2",
+            data=np.array([[0, 0], [0, 0]], dtype=np.uint8),
+        )
+        qa_2.attrs["_FillValue"] = 255
+
+    granule = VNP43IA4Granule(
+        filename=str(filename),
+        working_directory=str(tmp_path),
+        products_directory=str(tmp_path / "products"),
+    )
+
+    red_image = granule.reflectance(1, apply_QA=False, save_data=False)
+    nir_image = granule.reflectance(2, apply_QA=False, save_data=False)
+
+    assert np.allclose(np.asarray(red_image), np.array([[0.01, 0.02], [0.03, 0.04]]))
+    assert np.allclose(np.asarray(nir_image), np.array([[0.02, 0.03], [0.04, 0.05]]))
+    expected_ndvi = (np.asarray(nir_image) - np.asarray(red_image)) / (np.asarray(nir_image) + np.asarray(red_image))
+    assert np.allclose(np.asarray(granule.NDVI), expected_ndvi)
+
+
+def test_vnp43ia4_product_mosaics_tiles(monkeypatch, tmp_path):
+    geometry = generate_modland_grid(8, 5, 2)
+    source = Raster(np.ones((2, 2), dtype=float), geometry=geometry)
+
+    class DummyGranule:
+        def __init__(self):
+            self.albedo = source
+
+        def product(self, product):
+            return Raster(np.full((2, 2), 0.5, dtype=float), geometry=geometry)
+
+    monkeypatch.setattr("ECOv002_L2T_STARS.VIIRS.VNP43IA4.find_modland_tiles", lambda boundary: ["h08v05"])
+    monkeypatch.setattr(VNP43IA4, "granule", lambda self, date_UTC, tile, download_location=None, build=None: DummyGranule())
+
+    connection = VNP43IA4(working_directory=str(tmp_path))
+    result = connection.product("red", date_UTC=date(2024, 12, 10), geometry=geometry, save_data=False)
+
+    assert result.shape == (2, 2)
+    assert np.allclose(np.asarray(result), 0.5)
+
+
+def test_vnp43ma3_albedo_mosaic(monkeypatch, tmp_path):
+    geometry = generate_modland_grid(8, 5, 2)
+    source = Raster(np.full((2, 2), 0.25, dtype=float), geometry=geometry)
+
+    class DummyGranule:
+        @property
+        def albedo(self):
+            return source
+
+    monkeypatch.setattr("ECOv002_L2T_STARS.VIIRS.VNP43MA3.find_modland_tiles", lambda boundary: ["h08v05"])
+    monkeypatch.setattr(VNP43MA3, "granule", lambda self, date_UTC, tile, download_location=None, build=None: DummyGranule())
+    monkeypatch.setattr(Raster, "to_geometry", lambda self, geometry, resampling=None: Raster(np.full((2, 2), 0.25, dtype=float), geometry=geometry))
+
+    connection = VNP43MA3(working_directory=str(tmp_path))
+    result = connection.albedo(date_UTC=date(2024, 12, 10), geometry=geometry, filename=None)
+
+    assert result.shape == (2, 2)
+    assert np.allclose(np.asarray(result), 0.25)
 </file>
 
 <file path="verification/test_ECOSTRESS_data_fusion.py">
@@ -1935,6 +2598,197 @@ else:
     print("L2T STARS PGE did not succeed; skipping comparison")
 </file>
 
+<file path="compare.py">
+import glob
+import os
+import tempfile
+import zipfile
+import numpy as np
+import rasterio
+from ECOv002_granules import open_granule
+
+# ==========================================
+# CONFIGURATION: Update paths to your files
+# ==========================================
+LOCAL_PRODUCT_PATH = os.path.expanduser(
+    "~/data/ECOv002_testing/L2T_STARS_output/ECOv002_L2T_STARS_11SPS_20261027_0700_01"
+)
+DOWNLOADED_PRODUCT_PATH = os.path.expanduser(
+    "~/data/ECOv002_testing/ECOv002_L2T_STARS_11SPS_20261027_0713_01"
+)
+DIFF_OUTPUT_DIR = os.path.expanduser(
+    "~/data/ECOv002_testing/L2T_STARS_diff"
+)
+
+COMPARISON_VARIABLES = [
+    "NDVI",
+    "NDVI-UQ",
+    "albedo",
+    "albedo-UQ",
+]
+
+
+def resolve_granule_path(path: str, temp_root: str, label: str) -> str:
+    """Resolve a directory or extract a .zip into an isolated temp directory."""
+    if os.path.isdir(path):
+        return path
+
+    if path.endswith(".zip") and os.path.isfile(path):
+        extract_dir = os.path.join(temp_root, label)
+        os.makedirs(extract_dir, exist_ok=True)
+        with zipfile.ZipFile(path, "r") as z:
+            z.extractall(extract_dir)
+
+        root_tifs = glob.glob(os.path.join(extract_dir, "*.tif"))
+        if not root_tifs:
+            subfolders = [
+                os.path.join(extract_dir, d)
+                for d in os.listdir(extract_dir)
+                if os.path.isdir(os.path.join(extract_dir, d))
+            ]
+            if subfolders:
+                return subfolders[0]
+        return extract_dir
+
+    raise FileNotFoundError(f"Granule path not found: {path}")
+
+
+def get_template_profile(granule_dir: str, variable: str) -> dict:
+    """Read spatial metadata (CRS, transform, dimensions) from the source GeoTIFF."""
+    matches = glob.glob(os.path.join(granule_dir, f"*_{variable}.tif"))
+    if not matches:
+        raise FileNotFoundError(f"Template GeoTIFF not found for {variable} in {granule_dir}")
+    with rasterio.open(matches[0]) as src:
+        profile = src.profile.copy()
+    profile.update(
+        driver="GTiff",
+        dtype=rasterio.float32,
+        count=1,
+        nodata=np.nan,
+        compress="deflate",
+    )
+    return profile
+
+
+def write_diff_rasters(
+    local: np.ndarray,
+    downloaded: np.ndarray,
+    profile: dict,
+    output_dir: str,
+    granule_stem: str,
+    variable: str,
+) -> tuple[str, str]:
+    """Write signed difference (local - downloaded) and symmetric percent difference GeoTIFFs."""
+    os.makedirs(output_dir, exist_ok=True)
+
+    a = local.astype(np.float64)
+    b = downloaded.astype(np.float64)
+    valid = np.isfinite(a) & np.isfinite(b)
+
+    diff_grid = np.full(a.shape, np.nan, dtype=np.float32)
+    diff_grid[valid] = (a[valid] - b[valid]).astype(np.float32)
+
+    pct_diff_grid = np.full(a.shape, np.nan, dtype=np.float32)
+    denom = np.abs(a) + np.abs(b)
+    nonzero_valid = valid & (denom > 0)
+    pct_diff_grid[nonzero_valid] = (
+        200.0 * (a[nonzero_valid] - b[nonzero_valid]) / denom[nonzero_valid]
+    ).astype(np.float32)
+    pct_diff_grid[valid & (denom == 0)] = 0.0
+
+    diff_path = os.path.join(output_dir, f"{granule_stem}_{variable}_diff.tif")
+    pct_diff_path = os.path.join(output_dir, f"{granule_stem}_{variable}_pct_diff.tif")
+
+    with rasterio.open(diff_path, "w", **profile) as dst:
+        dst.write(diff_grid, 1)
+
+    with rasterio.open(pct_diff_path, "w", **profile) as dst:
+        dst.write(pct_diff_grid, 1)
+
+    return diff_path, pct_diff_path
+
+
+def compare_variable(local: np.ndarray, downloaded: np.ndarray) -> str:
+    if local.shape != downloaded.shape:
+        return f"shape mismatch: local {local.shape}, downloaded {downloaded.shape}"
+
+    local = local.astype(np.float64)
+    downloaded = downloaded.astype(np.float64)
+    local_nan = ~np.isfinite(local)
+    downloaded_nan = ~np.isfinite(downloaded)
+    valid = ~(local_nan | downloaded_nan)
+    nan_disagreement = int(np.count_nonzero(local_nan != downloaded_nan))
+
+    if not valid.any():
+        return f"no jointly valid pixels (NaN-mask disagreements: {nan_disagreement})"
+
+    a = local[valid]
+    b = downloaded[valid]
+    diff = a - b
+    identical = 100 * np.mean(a == b)
+    corr = np.corrcoef(a, b)[0, 1] if a.std() > 0 and b.std() > 0 else np.nan
+
+    # Symmetric percent difference (sMAPE): 200 * |a - b| / (|a| + |b|), excluding 0/0 pairs
+    denom = np.abs(a) + np.abs(b)
+    nonzero = denom > 0
+    sym_pct_diff = np.mean(200.0 * np.abs(diff[nonzero]) / denom[nonzero]) if nonzero.any() else 0.0
+
+    # Signed percent bias relative to downloaded reference mean
+    mean_b = b.mean()
+    pct_bias = 100.0 * diff.mean() / abs(mean_b) if mean_b != 0 else np.nan
+
+    return (
+        f"n={a.size}  NaN-mask disagreements={nan_disagreement}  identical={identical:.2f}%\n"
+        f"    mean local={a.mean():.6f}  mean downloaded={mean_b:.6f}  bias={diff.mean():.6f} ({pct_bias:+.2f}%)\n"
+        f"    MAE={np.abs(diff).mean():.6f}  RMSE={np.sqrt((diff ** 2).mean()):.6f}  "
+        f"max|diff|={np.abs(diff).max():.6f}  mean_pct_diff={sym_pct_diff:.2f}%  r={corr:.6f}"
+    )
+
+
+def main():
+    with tempfile.TemporaryDirectory(prefix="ecov002_compare_") as temp_root:
+        local_path = resolve_granule_path(LOCAL_PRODUCT_PATH, temp_root, "local")
+        downloaded_path = resolve_granule_path(DOWNLOADED_PRODUCT_PATH, temp_root, "downloaded")
+        granule_stem = os.path.basename(local_path.rstrip("/"))
+
+        print("Opening local experimental product:", local_path)
+        print("Opening downloaded reference product:", downloaded_path)
+        print("Writing difference rasters to:", DIFF_OUTPUT_DIR)
+
+        local_granule = open_granule(local_path)
+        downloaded_granule = open_granule(downloaded_path)
+
+        print("\n========================================")
+        print("Local vs Downloaded Product Comparison")
+        print("========================================")
+
+        for variable in COMPARISON_VARIABLES:
+            print(f"\nVariable: {variable}")
+            try:
+                local_data = np.array(local_granule.variable(variable))
+                downloaded_data = np.array(downloaded_granule.variable(variable))
+                print("  " + compare_variable(local_data, downloaded_data))
+
+                if local_data.shape == downloaded_data.shape:
+                    profile = get_template_profile(local_path, variable)
+                    diff_path, pct_diff_path = write_diff_rasters(
+                        local_data,
+                        downloaded_data,
+                        profile,
+                        DIFF_OUTPUT_DIR,
+                        granule_stem,
+                        variable,
+                    )
+                    print(f"    wrote: {os.path.basename(diff_path)}")
+                    print(f"    wrote: {os.path.basename(pct_diff_path)}")
+            except Exception as e:
+                print(f"  could not compare: {e}")
+
+
+if __name__ == "__main__":
+    main()
+</file>
+
 <file path="development_plan_aligning_ecov002_l2t_stars_with_ecostress_collection_2.md">
 # Development Plan: Aligning `ECOv002-L2T-STARS` with `ECOSTRESS-Collection-2`
 
@@ -1946,7 +2800,7 @@ else:
 
 ## 1. Executive Summary & Architectural Delta
 
-The `L2T_STARS` submodule in `ECOSTRESS-Collection-2` has undergone significant optimization and stabilization compared to the current `ECOv002-L2T-STARS` standalone repository:
+The `L2T_STARS` submodule in `ECOSTRESS-Collection-2` has undergone significant optimization and stabilization compared to the original `ECOv002-L2T-STARS` standalone repository:
 
 1. **Self-Contained Julia Data Fusion Engine:** Replaced the multi-file embedded `STARS_jl` package (which depended on `GeoDataFrames`, `sentinel2.geojson`, `HTTP`, `Plots`, and runtime `Pkg.add("OpenSSL")`) with a standalone, zero-internal-package script (`process_ECOSTRESS_data_fusion.jl`) that infers spatial dimensions directly from input GeoTIFFs.
 2. **Unified Hierarchical Input Staging (`DOWNSAMPLED_products`):** Replaced four separate flat staging folders (`NDVI_coarse`, `NDVI_fine`, `albedo_coarse`, `albedo_fine`) with a deterministic date/tile directory tree (`DOWNSAMPLED_products/<YYYY>/<YYYY-MM-DD>/<tile>/STARS_<var>_<tile>_<res>m.tif`) that caches intermediate rasters and avoids redundant regeneration.
@@ -1958,79 +2812,70 @@ The `L2T_STARS` submodule in `ECOSTRESS-Collection-2` has undergone significant 
 ## 2. Phased Implementation Plan
 
 ### Phase 1: Package Packaging & Configuration Fixes (`pyproject.toml`, `makefile`)
-Before refactoring runtime logic, resolve packaging metadata issues in `ECOv002-L2T-STARS`:
-
-1. **Fix Package Discovery in `pyproject.toml`:**
-   * Update `[tool.setuptools.packages.find]` from `include = ["ECOv002_L2T_JET"]` to `include = ["ECOv002_L2T_STARS*"]` so all subpackages (`daterange`, `timer`) and package data (`*.txt`, `*.xml`, `*.jl`, `Project.toml`) are properly bundled in wheels and editable installs.
-   * Update `[tool.setuptools.package-data]` to include `["*.txt", "*.xml", "*.jl", "Project.toml"]`.
-2. **Align Dependencies:**
-   * Verify `ECOv002-granules`, `VCD43NRT`, `harmonized-landsat-sentinel`, `sentinel-tiles`, and `colored-logging` versions match the APIs used in `ECOSTRESS-Collection-2` (e.g., `VIIRSDownloaderNDVI` / `VIIRSDownloaderAlbedo` vs. `VCD43NRT`).
-3. **Update `makefile` Targets:**
-   * Update `test-julia` (currently referencing non-existent `julia_smoke_test.jl` and `process_ECOSTRESS_data_fusion_distributed_bias.jl`) to invoke `python test_ECOSTRESS_data_fusion.py`.
-   * Keep `JULIA_PROJECT_NAME = julia_env` (or `ECOv002_L2T_STARS`) aligned with the pruned Julia environment.
+- [ ] **Fix Package Discovery in `pyproject.toml`:**
+  - [ ] Update `[tool.setuptools.packages.find]` from `include = ["ECOv002_L2T_JET"]` to `include = ["ECOv002_L2T_STARS*"]` so all subpackages (`daterange`, `timer`) are properly bundled in wheels and editable installs.
+  - [ ] Update `[tool.setuptools.package-data]` to include `["*.txt", "*.xml", "*.jl", "Project.toml"]`.
+- [ ] **Align Dependencies:**
+  - [ ] Verify `ECOv002-granules`, `VCD43NRT`, `harmonized-landsat-sentinel`, `sentinel-tiles`, and `colored-logging` versions match the APIs used in `ECOSTRESS-Collection-2` (e.g., `VIIRSDownloaderNDVI` / `VIIRSDownloaderAlbedo` vs. `VCD43NRT`).
+- [ ] **Update `makefile` Targets:**
+  - [x] Add `repomix` target to generate repository bundles cleanly.
+  - [ ] Refine `repomix` target to ignore `repomix*.xml` and `test_bundle/**`.
+  - [ ] Update `test-julia` (currently referencing non-existent `julia_smoke_test.jl` and `process_ECOSTRESS_data_fusion_distributed_bias.jl`) to invoke `python verification/test_ECOSTRESS_data_fusion.py`.
+  - [ ] Keep `JULIA_PROJECT_NAME = julia_env` (or `ECOv002_L2T_STARS`) aligned with the pruned Julia environment.
 
 ---
 
 ### Phase 2: Replace Embedded `STARS_jl` with Standalone `process_ECOSTRESS_data_fusion.jl`
 
-1. **Replace `ECOv002_L2T_STARS/process_ECOSTRESS_data_fusion.jl`:**
-   * Port the self-contained `process_ECOSTRESS_data_fusion.jl` from `ECOSTRESS-Collection-2`.
-   * **Key improvements gained:**
-     * Removes runtime `Pkg.add("OpenSSL")` network calls during PGE execution.
-     * Removes dependency on `STARS_jl` (`STARS.jl`, `HLS.jl`, `VNP43.jl`, `VIIRS.jl`, `MODLAND.jl`, `sentinel_tiles.jl`, `sentinel2.geojson`).
-     * Extracts `(X, Y)` grid dimensions and CRS directly from reference GeoTIFFs via `extract_tile_dims(ref_tif)` instead of looking up `sentinel2.geojson`.
-     * Reads inputs from the unified `DOWNSAMPLED_products` tree using `downsampled_tif_path(dir, d, tile, product, cell_size)`.
-     * Fixes a bug in `posterior_bias` / `posterior_bias_UQ` output writing: writes `fusion_results.mean_bias` and `fusion_results.SD_bias` using `(x_coarse, y_coarse, Band(1:1))` dimensions (avoiding dimension mismatches if `Ti` metadata persists).
-     * Adds explicit `force=true, driver="GTiff"` to all `Rasters.write` calls.
-2. **Prune `ECOv002_L2T_STARS/Project.toml` (and/or `julia_env/Project.toml`):**
-   * Declare only the exact Julia packages needed by the standalone script: `ArchGDAL`, `BlockDiagonals`, `Dates`, `Distances`, `GaussianRandomFields`, `LinearAlgebra`, `Logging`, `ProgressMeter`, `Rasters`, `SparseArrays`, `Statistics`.
-3. **Deprecate/Remove `ECOv002_L2T_STARS/STARS_jl/`:**
-   * Once Phase 4 regression tests pass, remove the legacy `ECOv002_L2T_STARS/STARS_jl/` subtree (saving ~15+ MB of GeoJSON and eliminating dead code).
+- [x] **Replace `ECOv002_L2T_STARS/process_ECOSTRESS_data_fusion.jl`:**
+  - [x] Port the self-contained `process_ECOSTRESS_data_fusion.jl` from `ECOSTRESS-Collection-2`.
+  - [x] Remove runtime `Pkg.add("OpenSSL")` network calls during PGE execution.
+  - [x] Remove dependency on `STARS_jl` (`STARS.jl`, `HLS.jl`, `VNP43.jl`, `VIIRS.jl`, `MODLAND.jl`, `sentinel_tiles.jl`, `sentinel2.geojson`).
+  - [x] Extract `(X, Y)` grid dimensions and CRS directly from reference GeoTIFFs via `extract_tile_dims(ref_tif)` instead of looking up `sentinel2.geojson`.
+  - [x] Read inputs from the unified `DOWNSAMPLED_products` tree using `downsampled_tif_path(dir, d, tile, product, cell_size)`.
+  - [x] Write `fusion_results.mean_bias` and `fusion_results.SD_bias` using `(x_coarse, y_coarse, Band(1:1))` dimensions with explicit `force=true, driver="GTiff"` to all `Rasters.write` calls.
+- [x] **Prune `ECOv002_L2T_STARS/Project.toml`:**
+  - [x] Update `Project.toml` to the pruned dependency list (`ArchGDAL`, `BlockDiagonals`, `Dates`, `DimensionalData`, `Distances`, `GaussianRandomFields`, `Glob`, `LinearAlgebra`, `Logging`, `Plots`, `ProgressMeter`, `Rasters`, `SparseArrays`, `Statistics`)—*optional: remove unused `DimensionalData`, `Glob`, and `Plots` entries*.
+- [x] **Remove `ECOv002_L2T_STARS/STARS_jl/`:**
+  - [x] Remove the legacy `ECOv002_L2T_STARS/STARS_jl/` subtree and `sentinel2.geojson`.
 
 ---
 
 ### Phase 3: Align `ECOv002_L2T_STARS/L2T_STARS.py`
 
-Update `ECOv002_L2T_STARS/L2T_STARS.py` to match `ECOSTRESS-Collection-2/L2T_STARS.py` while **retaining package-internal imports** (`.exit_codes`, `.runconfig`, `.daterange`, `.timer`, `.PGEVersion`).
+Update `ECOv002_L2T_STARS/L2T_STARS.py` to match `ECOSTRESS-Collection-2/L2T_STARS.py` while **retaining package-internal imports** (`.exit_codes`, `.runconfig`, `.daterange`, `.timer`, `.PGEVersion`) and the tile-only `granule_ID` convention:
 
-#### 3.1 Prior Loading (`load_prior`)
-* Update function signature to accept `NDVI_resolution: int` and `albedo_resolution: int`, plus `initial_bias_mean: float = 0.0` and `initial_bias_UQ: float = 0.05`.
-* Generate `.bias` and `.bias.UQ` filenames at **coarse resolution** (`NDVI_resolution` = `490`, `albedo_resolution` = `980`) rather than `target_resolution` (`70`).
-* If prior `.bias` or `.bias.UQ` GeoTIFFs do not exist on disk, synthesize and write constant rasters on the `SentinelTileGrid(target_resolution=...)` grid (`0.0` for bias mean, `0.05` for bias UQ) so `using_prior` succeeds reliably across stateless compute nodes.
-
-#### 3.2 Input Staging (`generate_downsampled_filename` & `generate_STARS_inputs`)
-* Add `generate_downsampled_filename(directory, variable, date_UTC, tile, cell_size)` producing:
-  ```text
-  <sources_directory>/DOWNSAMPLED_products/<YYYY>/<YYYY-MM-DD>/<tile>/STARS_<variable>_<tile>_<cell_size>m.tif
-  ```
-* Update `generate_STARS_inputs` to:
-  * Write directly into `downsampled_directory` (`DOWNSAMPLED_products`) instead of four separate `input_staging` subdirectories.
-  * Check `exists(...)` before generating each coarse or fine GeoTIFF to enable idempotent restarts and pre-staged test runs.
-  * Fix the type annotation bug `calibrate_fine: True` $\rightarrow$ `calibrate_fine: bool = True`.
-  * Log exceptions on coarse albedo failures consistently with coarse NDVI failures.
-
-#### 3.3 Julia Subprocess Execution (`process_julia_data_fusion`)
-* Update CLI argument signature to pass `downsampled_directory` and `product_name` (`"NDVI"` or `"albedo"`) instead of separate `coarse_directory` and `fine_directory` paths.
-* Support `julia +1.11` when `juliaup` is available, optional `--sysimage` detection via `STARS_JULIA_SYSIMAGE` or `julia_env/stars_sysimage.{so,dylib,dll}`, and `--project` resolution.
-* Add `check=True` to `subprocess.run(command, shell=True, check=True)` so Julia failures raise `subprocess.CalledProcessError` and return a non-zero PGE exit code instead of failing silently downstream.
-
-#### 3.4 Posterior Cleanup & VIIRS Prefetching (`process_STARS_product` & `L2T_STARS`)
-* Always re-write and retain posterior `.bias` and `.bias.UQ` GeoTIFFs in `L2T_STARS_MODEL` (only gate the fine-resolution posterior GeoTIFF re-writes behind `if not remove_posterior:`).
-* Ensure `VNP09GA` prefetching runs in standard execution mode (`else:` branch in `L2T_STARS()`) as well as `sources_only=True`.
-* **Granule ID Consistency Check:** Verify whether `generate_L2T_STARS_runconfig` should keep `ECOv002_L2T_STARS_<tile>_<YYYYMMDD>_<build>_<counter>` (matching `L2TSTARSConfig` and `ECOv002_granules.L2TSTARS`) rather than inserting `<orbit>_<scene>` into the runconfig filename pattern.
+- [x] **3.1 Prior Loading (`load_prior`):**
+  - [x] Update function signature to accept `NDVI_resolution: int` and `albedo_resolution: int`, plus `initial_bias_mean: float = 0.0` and `initial_bias_UQ: float = 0.05`.
+  - [x] Generate `.bias` and `.bias.UQ` filenames at **coarse resolution** (`NDVI_resolution` = `490`, `albedo_resolution` = `980`) rather than `target_resolution` (`70`).
+  - [x] Synthesize and write constant rasters on `SentinelTileGrid(target_resolution=...)` (`0.0` for bias mean, `0.05` for bias UQ) when prior `.bias` or `.bias.UQ` GeoTIFFs do not exist on disk.
+- [x] **3.2 Input Staging (`generate_downsampled_filename` & `generate_STARS_inputs`):**
+  - [x] Add `generate_downsampled_filename(directory, variable, date_UTC, tile, cell_size)` producing `<sources_directory>/DOWNSAMPLED_products/<YYYY>/<YYYY-MM-DD>/<tile>/STARS_<variable>_<tile>_<cell_size>m.tif`.
+  - [x] Update `generate_STARS_inputs` to write directly into `downsampled_directory` (`DOWNSAMPLED_products`), skip regenerating existing GeoTIFFs (`exists(...)`), fix `calibrate_fine: bool = True`, and log exceptions on coarse albedo failures.
+- [x] **3.3 Julia Subprocess Execution (`process_julia_data_fusion`):**
+  - [x] Remove `install_STARS_jl()` and `instantiate_STARS_jl()`.
+  - [x] Pass `downsampled_directory` and `product_name` (`"NDVI"` or `"albedo"`) instead of separate `coarse_directory` and `fine_directory` paths.
+  - [x] Support `julia +1.11` when `juliaup` is available, optional `--sysimage` detection via `STARS_JULIA_SYSIMAGE` or `julia_env/stars_sysimage.{so,dylib,dll}`, and `--project` resolution (with fallback to `ECOv002_L2T_STARS/`).
+  - [x] Add `check=True` to `subprocess.run(command, shell=True, check=True)`.
+- [x] **3.4 Posterior Cleanup & VIIRS Prefetching (`process_STARS_product` & `L2T_STARS`):**
+  - [x] Always re-write and retain posterior `.bias` and `.bias.UQ` GeoTIFFs in `L2T_STARS_MODEL` (only gate the fine-resolution posterior GeoTIFF re-writes behind `if not remove_posterior:`).
+  - [x] Ensure `VNP09GA` prefetching runs in standard execution mode (`else:` branch in `L2T_STARS()`) as well as `sources_only=True`.
+  - [x] Preserve standalone package imports (`.exit_codes`, `.runconfig`, `.daterange`, `.timer`, `.PGEVersion`) and tile-only `granule_ID` format (`ECOv002_L2T_STARS_<tile>_<YYYYMMDD>_<build>_<counter>`).
 
 ---
 
 ### Phase 4: Port Validation Suite & Documentation
 
-1. **Add Isolated Fusion Test Runner (`tests/test_ECOSTRESS_data_fusion.py`):**
-   * Port `test_ECOSTRESS_data_fusion.py` and configure `pytest` integration so `make test-julia` / `pytest` can execute both unit tests and bundle regression checks (`MAE <= 5e-4`, `|bias| <= 1e-4`, `r >= 0.99`, `nan_disagreements == 0`).
-   * Host or reference the `test_bundle/` dataset (`11SPS`, target `2026-10-27`, prior `2026-10-23`) outside Git (or via Git LFS / test fixture download) so large GeoTIFFs do not bloat repository history.
-2. **Update End-to-End Integration Script (`example_L2T_STARS_with_download.py`):**
-   * Align the comparison table formatting and local expected-output fallback with `test_L2T_STARS.py` from `ECOSTRESS-Collection-2`.
-3. **Include LOM & Rust Migration Documentation (`docs/`):**
-   * Add `known_deficiencies_maintained_in_stars_collection_2_for_lom_record_consistency.md` to document DEF-01 through DEF-05 so future contributors do not inadvertently alter Collection 2 Life-of-Mission behavior.
-   * Add `stars_rust_pyo3_translation_development_notes.md` as the blueprint for replacing the Julia subprocess with a native Rust/PyO3 extension module (`stars_fusion`).
+- [ ] **4.1 Isolated Fusion Test Runner (`verification/test_ECOSTRESS_data_fusion.py`):**
+  - [x] Copy `test_ECOSTRESS_data_fusion.py` and `test_bundle/` (`11SPS`, target `2026-10-27`, prior `2026-10-23`) into the repository.
+  - [ ] Update `DEFAULT_BUNDLE_DIR` and `candidate_julia_paths` in `verification/test_ECOSTRESS_data_fusion.py` to resolve `../test_bundle` and `../ECOv002_L2T_STARS/process_ECOSTRESS_data_fusion.jl` from the `verification/` subdirectory.
+  - [ ] Ensure `test_bundle/` is excluded from Git commits (via `.gitignore` or external fixture hosting) so large GeoTIFFs do not bloat repository history.
+- [ ] **4.2 End-to-End Integration Script (`verification/test_L2T_STARS.py` & `example_L2T_STARS_with_download.py`):**
+  - [x] Copy `test_L2T_STARS.py` into `verification/`.
+  - [ ] Update `verification/test_L2T_STARS.py` imports from `L2T_STARS` to `ECOv002_L2T_STARS` and fix `open_granule("test_bundle/ECOv002_L2T_STARS_11SPS_20261027_0700_01")`.
+- [ ] **4.3 Include LOM & Rust Migration Documentation:**
+  - [ ] Add `known_deficiencies_maintained_in_stars_collection_2_for_lom_record_consistency.md` to document DEF-01 through DEF-05.
+  - [ ] Add `stars_rust_pyo3_translation_development_notes.md` as the blueprint for replacing the Julia subprocess with a native Rust/PyO3 extension module (`stars_fusion`).
 
 ---
 
@@ -2039,8 +2884,345 @@ Update `ECOv002_L2T_STARS/L2T_STARS.py` to match `ECOSTRESS-Collection-2/L2T_STA
 - [ ] **Editable Install:** `pip install -e '.[dev]'` installs `ECOv002_L2T_STARS` with all subpackages and `.jl`/`.xml`/`.txt` assets included.
 - [ ] **Julia Environment:** `make install-julia` instantiates and precompiles `process_ECOSTRESS_data_fusion.jl` without network calls at runtime.
 - [ ] **Prior State Generation:** `load_prior()` creates `490 m` (NDVI) and `980 m` (albedo) `.bias` and `.bias.UQ` rasters when missing from `L2T_STARS_MODEL`.
-- [ ] **Isolated Bundle Parity:** `python test_ECOSTRESS_data_fusion.py` achieves `Overall result: PASS` across all 8 layers (`NDVI`, `NDVI-UQ`, `NDVI.bias`, `NDVI.bias.UQ`, `albedo`, `albedo-UQ`, `albedo.bias`, `albedo.bias.UQ`).
-- [ ] **Full PGE Run:** `example_L2T_STARS_with_download.py` exits with code `0` (`SUCCESS_EXIT_CODE`) and matches reference granule layers within tolerance.
+- [ ] **Isolated Bundle Parity:** `python verification/test_ECOSTRESS_data_fusion.py` achieves `Overall result: PASS` across all 8 layers (`NDVI`, `NDVI-UQ`, `NDVI.bias`, `NDVI.bias.UQ`, `albedo`, `albedo-UQ`, `albedo.bias`, `albedo.bias.UQ`).
+- [ ] **Full PGE Run:** `python verification/test_L2T_STARS.py` exits with code `0` (`SUCCESS_EXIT_CODE`) and matches reference granule layers within tolerance.
+</file>
+
+<file path="geos5fp.py">
+from GEOS5FP import GEOS5FP, FailedGEOS5FPDownload
+
+__all__ = ["GEOS5FP", "FailedGEOS5FPDownload"]
+</file>
+
+<file path="known_deficiencies_maintained_in_stars_collection_2_for_lom_record_consistency.md">
+# Known Deficiencies Maintained in STARS Collection 2 for LOM Record Consistency
+
+**Product:** ECOSTRESS Collection 2 Level-2 Tiled Ancillary NDVI and Albedo (`ECO_L2T_STARS`, Build `0700`)  
+**Scope:** Operational PGE (`L2T_STARS.py` / `process_ECOSTRESS_data_fusion.jl`)  
+**Purpose:** Document known algorithmic, state-persistence, and configuration behaviors intentionally retained in Collection 2 to ensure Life-of-Mission (LOM) data record consistency across reprocessing and forward processing streams.
+
+---
+
+## Executive Summary
+
+During Collection 2 validation and dry-run I/O auditing of the `L2T_STARS` Product Generation Executive (PGE), several architectural and configuration behaviors were identified in how prior model states, coarse-to-fine calibration, and temporal spin-up windows are handled. Modifying these behaviors mid-mission would introduce step-change discontinuities in the `NDVI`, `NDVI-UQ`, `albedo`, and `albedo-UQ` time series. Consequently, these behaviors are documented below as **known deficiencies maintained in Collection 2** to preserve Life-of-Mission (LOM) record consistency.
+
+---
+
+## 1. Reset of Coarse-Scale Spatial Bias and Bias Uncertainty Priors (`load_prior`)
+
+### Mechanism
+In `L2T_STARS.py`, the `DataFusionState` passed into the Julia STARS solver (`process_ECOSTRESS_data_fusion.jl`) requires four prior state rasters from the preceding timestep ($t_{\text{prior}}$):
+1. Fine-scale state mean (`NDVI` / `albedo` at $70\text{ m}$)
+2. Fine-scale state uncertainty (`NDVI.UQ` / `albedo.UQ` at $70\text{ m}$)
+3. Coarse-scale sensor bias mean (`NDVI.bias` / `albedo.bias` at $490\text{ m}$ / $980\text{ m}$)
+4. Coarse-scale sensor bias uncertainty (`NDVI.bias.UQ` / `albedo.bias.UQ` at $490\text{ m}$ / $980\text{ m}$)
+
+However, the published `ECO_L2T_STARS` archive granule (`.zip`) only packages the four fine-scale layers (`NDVI`, `NDVI-UQ`, `albedo`, `albedo-UQ`). In addition, under default production flags (`remove_posterior=True`), the intermediate `.bias` and `.bias.UQ` GeoTIFFs written to `L2T_STARS_MODEL` are deleted upon granule completion, or are unavailable when a granule is processed on a different compute node or during distributed reprocessing.
+
+When `load_prior()` unpacks `L2T_STARS_PRIOR` and finds no pre-existing `.bias` or `.bias.UQ` GeoTIFFs in `L2T_STARS_MODEL/<tile>/<prior_date>/`, it synthesizes constant rasters:
+* `initial_bias_mean` $= 0.0$
+* `initial_bias_UQ` $= 0.05$
+
+### Impact on the Data Record
+* While the fine-scale mean and uncertainty states propagate continuously from `L2T_STARS_PRIOR`, the coarse-scale VIIRS-to-HLS bias state (`mean_bias`, `SD_bias`) resets to a zero-mean, uniform-uncertainty prior at every granule execution.
+* Over the short assimilation window between consecutive ECOSTRESS overpasses (typically 1–5 days), the random-walk bias state (`offset_ar = [1, 0.0]`, `offset_var = [1e-5, 1e-5]`) partially re-adapts rather than inheriting the accumulated spatial bias field from $t_{\text{prior}}$.
+
+### LOM Retention Rationale
+Packaging new layers into the `ECO_L2T_STARS` product specification or altering prior bias initialization would break schema compatibility with downstream Collection 2 PGEs (`L3T_JET`, `L4T_ESI`, `L4T_WUE`) and introduce a systematic shift in bias-corrected `NDVI` and `albedo` relative to previously processed Collection 2 granules.
+
+---
+
+## 2. Uncalibrated Fine-Scale HLS Inputs (`DEFAULT_CALIBRATE_FINE = False`)
+
+### Mechanism
+`L2T_STARS.py` defines a helper function `calibrate_fine_to_coarse(fine_image, coarse_image)` that applies an ordinary least-squares linear regression (`scipy.stats.linregress`) to match aggregated $70\text{ m}$ HLS observations to the corresponding coarse VIIRS grid ($490\text{ m}$ for NDVI, $980\text{ m}$ for albedo) whenever $\ge 30$ valid co-located pixels exist.
+
+Although the helper functions `generate_STARS_inputs()` and `process_STARS_product()` default their local parameter signatures to `calibrate_fine: bool = True`, the top-level PGE entrypoint `L2T_STARS()` overrides this via the module constant:
+```python
+DEFAULT_CALIBRATE_FINE = False
+```
+In addition, `L2T_STARS.xml` does not expose `calibrate_fine` as a configurable run-config parameter.
+
+### Impact on the Data Record
+* Fine-resolution HLS `NDVI` and `albedo` inputs written to `DOWNSAMPLED_products` are assimilated directly in native HLS radiometric/BRDF space without linear cross-calibration to VIIRS (`VCD43NRT`).
+* Any cross-sensor offset between HLS (Landsat 8/9 OLI and Sentinel-2 MSI) and VIIRS (`VNP09GA` / `VCD43NRT`) is absorbed entirely by the STARS coarse-scale bias state (`mean_bias`) rather than pre-harmonized via linear regression.
+
+### LOM Retention Rationale
+Enabling `DEFAULT_CALIBRATE_FINE = True` would alter the radiometric baseline of HLS observations entering the Kalman filter and change the magnitude of `NDVI` and `albedo` across the entire mission record, particularly in scenes with high spatial heterogeneity or sparse valid pixel overlap.
+
+---
+
+## 3. Asymmetric Temporal Windows for Spatial Covariance vs. Kalman Fusion
+
+### Mechanism
+When a valid prior granule (`using_prior == True`) falls within the default 7-day spin-up window (`DEFAULT_SPINUP_DAYS = 7`), `L2T_STARS.py` defines two distinct start dates:
+* **VIIRS window (`VIIRS_start_date` to `end_date`):** Always spans `spinup_days + 1` days (8 days total, e.g., $t - 7$ through $t$).
+* **HLS / Fusion window (`HLS_start_date` to `end_date`):** Truncated to `prior_date_UTC + 1 day` through `end_date` (e.g., 4 days when `prior_date_UTC` is $t - 4$).
+
+Inside `process_ECOSTRESS_data_fusion.jl`:
+1. `covariance_images` ingests the full 8-day VIIRS stack (`VIIRS_start_date:Day(1):VIIRS_end_date`) to estimate the Matérn spatial variance parameter (`sp_var = fast_var_est(covariance_images, n_eff_agg = n_eff)`).
+2. `coarse_images` and `fine_images` are constructed only over `dates = HLS_start_date:Day(1):HLS_end_date`, reusing the in-memory VIIRS slices from that truncated sub-window.
+
+### Impact on the Data Record
+* Spatial covariance parameters (`cov_pars_raster`) are estimated using a fixed 8-day rolling window of coarse observations (which overlaps dates prior to `prior_date_UTC`), whereas the state-space data fusion filter only assimilates VIIRS and HLS observations strictly following `prior_date_UTC`.
+* When no prior is available (`using_prior == False`), both `fast_var_est` and `coarse_fine_data_fusion` operate over the identical 8-day window.
+
+### LOM Retention Rationale
+Aligning the covariance estimation window with `HLS_start_date` would reduce the sample size available to `fast_var_est` during short inter-overpass intervals (down to 1–2 days), increasing noise in `sp_var` and causing temporal variance fluctuations between dense and sparse ECOSTRESS revisit periods.
+
+---
+
+## 4. Zero-Value Masking Treated as Missing Data (`0 == NaN`)
+
+### Mechanism
+In `L2T_STARS.py`, all four input ingestion functions explicitly mask exact zero values to `NaN` prior to writing GeoTIFFs for Julia:
+* `generate_NDVI_coarse_image`: `coarse_image = rt.where(coarse_image == 0, np.nan, coarse_image)`
+* `generate_NDVI_fine_image`: `fine_image = rt.where(fine_image == 0, np.nan, fine_image)`
+* `generate_albedo_coarse_image`: `coarse_image = rt.where(coarse_image == 0, np.nan, coarse_image)`
+* `generate_albedo_fine_image`: `fine_image = rt.where(fine_image == 0, np.nan, fine_image)`
+
+### Impact on the Data Record
+* While intended to filter unmasked fill values (`0`) along tile boundaries or water/nodata edges, any legitimate surface pixel whose computed `NDVI` or `albedo` equals exactly `0.0` is converted to `NaN` in the observation slice.
+* Those pixels rely on temporal persistence from the prior and spatial interpolation from neighboring pixels rather than direct measurement updates on that date.
+
+### LOM Retention Rationale
+Changing the nodata sentinel logic risks propagating `0.0` fill pixels from upstream HLS or `VCD43NRT` tile margins into the Kalman filter, which would corrupt spatial variance estimates (`fast_var_est`) and bias fields along swath and tile edges.
+
+---
+
+## 5. Fixed Matérn Spatial Covariance Hyperparameters and Unsmoothed Filtering
+
+### Mechanism
+In `process_ECOSTRESS_data_fusion.jl`, the spatial covariance structure and Kalman filter execution parameters are hardcoded across all global tiles and land-cover types:
+* **Matérn range:** $200\text{ m}$ (`cov_pars_raster[:, :, 2] .= 200`)
+* **Nugget variance:** $10^{-10}$ (`cov_pars_raster[:, :, 3] .= 1e-10`)
+* **Matérn smoothness:** $\nu = 1.5$ (`cov_pars_raster[:, :, 4] .= 1.5`)
+* **Spatial buffer distance:** $100\text{ m}$ (`buffer_distance = 100.`)
+* **Temporal smoothing:** Disabled (`smooth = false`), executing forward-only filtering up to `target_times = [target_date]`.
+
+### Impact on the Data Record
+* Spatial correlation length scales do not vary by biome, topography, or agricultural parcel size.
+* Because `smooth = false` is enforced, observations occurring on `target_date` update the posterior state, whereas the forward-only filter does not perform backward Rauch–Tung–Striebel (RTS) smoothing across the spin-up window.
+
+### LOM Retention Rationale
+Maintaining fixed Matérn hyperparameters and forward-only filtering ensures deterministic uncertainty quantification (`NDVI-UQ`, `albedo-UQ`) and consistent spatial texture across all Collection 2 granules globally.
+
+---
+
+## Summary Matrix
+
+| ID | Component | Location | Behavior Maintained in Collection 2 | Primary Consistency Benefit |
+| :--- | :--- | :--- | :--- | :--- |
+| **DEF-01** | Prior Bias State | `L2T_STARS.py` (`load_prior`) | `.bias` and `.bias.UQ` initialize to `0.0` and `0.05` when absent from `L2T_STARS_MODEL` | Preserves 4-layer granule schema and avoids mid-mission baseline shifts |
+| **DEF-02** | HLS Calibration | `L2T_STARS.py` (`DEFAULT_CALIBRATE_FINE`) | Fine-scale HLS inputs are not linearly regressed to VIIRS (`False`) | Prevents radiometric step-changes across the LOM archive |
+| **DEF-03** | Temporal Windows | `L2T_STARS.py` / `process_ECOSTRESS_data_fusion.jl` | Covariance uses 8-day VIIRS window; fusion uses post-prior window | Stabilizes `fast_var_est` during short revisit intervals |
+| **DEF-04** | Zero-Value Masking | `L2T_STARS.py` (`generate_*_image`) | Exact `0.0` values are coerced to `NaN` prior to fusion | Prevents `0`-padded tile/swath borders from corrupting covariance |
+| **DEF-05** | Spatial Hyperparameters | `process_ECOSTRESS_data_fusion.jl` | Fixed $200\text{ m}$ range, $\nu=1.5$, $100\text{ m}$ buffer, `smooth = false` | Guarantees uniform spatial texture and UQ scaling globally |
+</file>
+
+<file path="LICENSE">
+Apache License
+                           Version 2.0, January 2004
+                        http://www.apache.org/licenses/
+
+   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+   1. Definitions.
+
+      "License" shall mean the terms and conditions for use, reproduction,
+      and distribution as defined by Sections 1 through 9 of this document.
+
+      "Licensor" shall mean the copyright owner or entity authorized by
+      the copyright owner that is granting the License.
+
+      "Legal Entity" shall mean the union of the acting entity and all
+      other entities that control, are controlled by, or are under common
+      control with that entity. For the purposes of this definition,
+      "control" means (i) the power, direct or indirect, to cause the
+      direction or management of such entity, whether by contract or
+      otherwise, or (ii) ownership of fifty percent (50%) or more of the
+      outstanding shares, or (iii) beneficial ownership of such entity.
+
+      "You" (or "Your") shall mean an individual or Legal Entity
+      exercising permissions granted by this License.
+
+      "Source" form shall mean the preferred form for making modifications,
+      including but not limited to software source code, documentation
+      source, and configuration files.
+
+      "Object" form shall mean any form resulting from mechanical
+      transformation or translation of a Source form, including but
+      not limited to compiled object code, generated documentation,
+      and conversions to other media types.
+
+      "Work" shall mean the work of authorship, whether in Source or
+      Object form, made available under the License, as indicated by a
+      copyright notice that is included in or attached to the work
+      (an example is provided in the Appendix below).
+
+      "Derivative Works" shall mean any work, whether in Source or Object
+      form, that is based on (or derived from) the Work and for which the
+      editorial revisions, annotations, elaborations, or other modifications
+      represent, as a whole, an original work of authorship. For the purposes
+      of this License, Derivative Works shall not include works that remain
+      separable from, or merely link (or bind by name) to the interfaces of,
+      the Work and Derivative Works thereof.
+
+      "Contribution" shall mean any work of authorship, including
+      the original version of the Work and any modifications or additions
+      to that Work or Derivative Works thereof, that is intentionally
+      submitted to Licensor for inclusion in the Work by the copyright owner
+      or by an individual or Legal Entity authorized to submit on behalf of
+      the copyright owner. For the purposes of this definition, "submitted"
+      means any form of electronic, verbal, or written communication sent
+      to the Licensor or its representatives, including but not limited to
+      communication on electronic mailing lists, source code control systems,
+      and issue tracking systems that are managed by, or on behalf of, the
+      Licensor for the purpose of discussing and improving the Work, but
+      excluding communication that is conspicuously marked or otherwise
+      designated in writing by the copyright owner as "Not a Contribution."
+
+      "Contributor" shall mean Licensor and any individual or Legal Entity
+      on behalf of whom a Contribution has been received by Licensor and
+      subsequently incorporated within the Work.
+
+   2. Grant of Copyright License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      copyright license to reproduce, prepare Derivative Works of,
+      publicly display, publicly perform, sublicense, and distribute the
+      Work and such Derivative Works in Source or Object form.
+
+   3. Grant of Patent License. Subject to the terms and conditions of
+      this License, each Contributor hereby grants to You a perpetual,
+      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
+      (except as stated in this section) patent license to make, have made,
+      use, offer to sell, sell, import, and otherwise transfer the Work,
+      where such license applies only to those patent claims licensable
+      by such Contributor that are necessarily infringed by their
+      Contribution(s) alone or by combination of their Contribution(s)
+      with the Work to which such Contribution(s) was submitted. If You
+      institute patent litigation against any entity (including a
+      cross-claim or counterclaim in a lawsuit) alleging that the Work
+      or a Contribution incorporated within the Work constitutes direct
+      or contributory patent infringement, then any patent licenses
+      granted to You under this License for that Work shall terminate
+      as of the date such litigation is filed.
+
+   4. Redistribution. You may reproduce and distribute copies of the
+      Work or Derivative Works thereof in any medium, with or without
+      modifications, and in Source or Object form, provided that You
+      meet the following conditions:
+
+      (a) You must give any other recipients of the Work or
+          Derivative Works a copy of this License; and
+
+      (b) You must cause any modified files to carry prominent notices
+          stating that You changed the files; and
+
+      (c) You must retain, in the Source form of any Derivative Works
+          that You distribute, all copyright, patent, trademark, and
+          attribution notices from the Source form of the Work,
+          excluding those notices that do not pertain to any part of
+          the Derivative Works; and
+
+      (d) If the Work includes a "NOTICE" text file as part of its
+          distribution, then any Derivative Works that You distribute must
+          include a readable copy of the attribution notices contained
+          within such NOTICE file, excluding those notices that do not
+          pertain to any part of the Derivative Works, in at least one
+          of the following places: within a NOTICE text file distributed
+          as part of the Derivative Works; within the Source form or
+          documentation, if provided along with the Derivative Works; or,
+          within a display generated by the Derivative Works, if and
+          wherever such third-party notices normally appear. The contents
+          of the NOTICE file are for informational purposes only and
+          do not modify the License. You may add Your own attribution
+          notices within Derivative Works that You distribute, alongside
+          or as an addendum to the NOTICE text from the Work, provided
+          that such additional attribution notices cannot be construed
+          as modifying the License.
+
+      You may add Your own copyright statement to Your modifications and
+      may provide additional or different license terms and conditions
+      for use, reproduction, or distribution of Your modifications, or
+      for any such Derivative Works as a whole, provided Your use,
+      reproduction, and distribution of the Work otherwise complies with
+      the conditions stated in this License.
+
+   5. Submission of Contributions. Unless You explicitly state otherwise,
+      any Contribution intentionally submitted for inclusion in the Work
+      by You to the Licensor shall be under the terms and conditions of
+      this License, without any additional terms or conditions.
+      Notwithstanding the above, nothing herein shall supersede or modify
+      the terms of any separate license agreement you may have executed
+      with Licensor regarding such Contributions.
+
+   6. Trademarks. This License does not grant permission to use the trade
+      names, trademarks, service marks, or product names of the Licensor,
+      except as required for reasonable and customary use in describing the
+      origin of the Work and reproducing the content of the NOTICE file.
+
+   7. Disclaimer of Warranty. Unless required by applicable law or
+      agreed to in writing, Licensor provides the Work (and each
+      Contributor provides its Contributions) on an "AS IS" BASIS,
+      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
+      implied, including, without limitation, any warranties or conditions
+      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
+      PARTICULAR PURPOSE. You are solely responsible for determining the
+      appropriateness of using or redistributing the Work and assume any
+      risks associated with Your exercise of permissions under this License.
+
+   8. Limitation of Liability. In no event and under no legal theory,
+      whether in tort (including negligence), contract, or otherwise,
+      unless required by applicable law (such as deliberate and grossly
+      negligent acts) or agreed to in writing, shall any Contributor be
+      liable to You for damages, including any direct, indirect, special,
+      incidental, or consequential damages of any character arising as a
+      result of this License or out of the use or inability to use the
+      Work (including but not limited to damages for loss of goodwill,
+      work stoppage, computer failure or malfunction, or any and all
+      other commercial damages or losses), even if such Contributor
+      has been advised of the possibility of such damages.
+
+   9. Accepting Warranty or Additional Liability. While redistributing
+      the Work or Derivative Works thereof, You may choose to offer,
+      and charge a fee for, acceptance of support, warranty, indemnity,
+      or other liability obligations and/or rights consistent with this
+      License. However, in accepting such obligations, You may act only
+      on Your own behalf and on Your sole responsibility, not on behalf
+      of any other Contributor, and only if You agree to indemnify,
+      defend, and hold each Contributor harmless for any liability
+      incurred by, or claims asserted against, such Contributor by reason
+      of your accepting any such warranty or additional liability.
+
+   END OF TERMS AND CONDITIONS
+
+   APPENDIX: How to apply the Apache License to your work.
+
+      To apply the Apache License to your work, attach the following
+      boilerplate notice, with the fields enclosed by brackets "[]"
+      replaced with your own identifying information. (Don't include
+      the brackets!)  The text should be enclosed in the appropriate
+      comment syntax for the file format. We also recommend that a
+      file or class name and description of purpose be included on the
+      same "printed page" as the copyright notice for easier
+      identification within third-party archives.
+
+   Copyright [yyyy] [name of copyright owner]
+
+   Licensed under the Apache License, Version 2.0 (the "License");
+   you may not use this file except in compliance with the License.
+   You may obtain a copy of the License at
+
+       http://www.apache.org/licenses/LICENSE-2.0
+
+   Unless required by applicable law or agreed to in writing, software
+   distributed under the License is distributed on an "AS IS" BASIS,
+   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+   See the License for the specific language governing permissions and
+   limitations under the License.
 </file>
 
 <file path="repomix_for_submodule_from_another_package_that_we_need_to_replicate.xml">
@@ -6619,386 +7801,221 @@ else:
 </files>
 </file>
 
-<file path=".github/workflows/python-publish.yml">
-# This workflow will upload a Python Package using Twine when a release is created
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-python#publishing-to-package-registries
-
-# This workflow uses actions that are not certified by GitHub.
-# They are provided by a third-party and are governed by
-# separate terms of service, privacy policy, and support
-# documentation.
-
-name: Upload Python Package
-
-on:
-  release:
-    types: [published]
-
-permissions:
-  contents: read
-
-jobs:
-  deploy:
-
-    runs-on: ubuntu-latest
-
-    steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python
-      uses: actions/setup-python@v3
-      with:
-        python-version: '3.x'
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install build
-    - name: Build package
-      run: python -m build
-    - name: Publish package
-      uses: pypa/gh-action-pypi-publish@27b31702a0e7fc50959f5ad993c78deac1bdfc29
-      with:
-        user: __token__
-        password: ${{ secrets.PYPI_API_TOKEN }}
-</file>
-
-<file path="ECOv002_L2T_STARS/daterange/__init__.py">
-from .daterange import *
-</file>
-
-<file path="ECOv002_L2T_STARS/daterange/daterange.py">
-import datetime
-import logging
-from typing import List, Union
-
-from dateutil import parser
-
-logger = logging.getLogger(__name__)
-
-
-def get_date(dt: Union[datetime.date, datetime.datetime, str]) -> datetime.date or None:
-    if dt is None:
-        return None
-    elif isinstance(dt, datetime.datetime):
-        return dt.date()
-    elif isinstance(dt, datetime.date):
-        return dt
-    elif isinstance(dt, str):
-        return parser.parse(dt).date()
-    else:
-        raise ValueError(f"invalid date type: {type(dt)}")
-
-
-def date_range(start: Union[datetime.date, str], end: Union[datetime.date, str]) -> List[datetime.date]:
-    start = get_date(start)
-    end = get_date(end)
-
-    try:
-        count = (end - start).days
-    except TypeError as e:
-        logger.exception(e)
-        raise TypeError(f"start type: {type(start)} end type: {type(end)}")
-
-    dates = [start + datetime.timedelta(days=days) for days in range(count + 1)]
-
-    return dates
-</file>
-
-<file path="ECOv002_L2T_STARS/timer/__init__.py">
-from .timer import *
-</file>
-
-<file path="ECOv002_L2T_STARS/timer/timer.py">
-"""
-This is a minimalistic performance timer.
-"""
-import time
-
-__author__ = "Gregory Halverson"
-
-DEFAULT_FORMAT = "0.2f"
-
-class Timer(object):
-    """
-    This is a minimalistic performance timer.
-    """
-
-    def __init__(self):
-        self._start_time = None
-        self._end_time = None
-        self.start()
-
-    def __enter__(self, *args, **kwargs):
-        self.start()
-        return self
-
-    def __exit__(self, *args, **kwargs):
-        self.end()
-
-    def __repr__(self):
-        # print("Timer.__repr__")
-        return self.__format__(format_string=DEFAULT_FORMAT)
-
-    def __str__(self):
-        # print("Timer.__str__")
-        return self.__repr__()
-
-    def __format__(self, format_string=DEFAULT_FORMAT):
-        if format_string is None or format_string == "":
-            format_string = DEFAULT_FORMAT
-
-        return format(self.duration, format_string)
-
-    @property
-    def now(self):
-        # return datetime.now()
-        return time.perf_counter()
-
-    def start(self):
-        self._start_time = self.now
-
-        return self.start_time
-
-    @property
-    def start_time(self):
-        return self._start_time
-
-    def end(self):
-        self._end_time = self.now
-
-        return self.end_time
-
-    @property
-    def end_time(self):
-        return self._end_time
-
-    @property
-    def duration(self):
-        if self.start_time is None:
-            raise Exception("timer never started")
-
-        if self.end_time is None:
-            end_time = self.now
-        else:
-            end_time = self.end_time
-
-        duration = end_time - self.start_time
-
-        return duration
-</file>
-
-<file path="ECOv002_L2T_STARS/exit_codes.py">
-"""
-ECOSTRESS Collection 2 Exit Codes
-https://wiki.jpl.nasa.gov/pages/viewpage.action?pageId=442764459
-"""
-__author__ = "Gregory Halverson"
-
-SUCCESS_EXIT_CODE = 0
-UNCLASSIFIED_FAILURE_EXIT_CODE = 1
-RUNCONFIG_FILENAME_NOT_SUPPLIED = 2
-UNABLE_TO_OPEN_RUNCONFIG_FILE = 3
-UNABLE_TO_PARSE_RUNCONFIG_FILE = 4
-CORRUPTED_RUNCONFIG_STRUCTURE = 5
-MISSING_RUNCONFIG_VALUE = 6
-FILESYSTEM_INACCESSIBLE = 7
-INPUT_FILES_INACCESSIBLE = 8
-UNCALIBRATED_GEOLOCATION = 9
-INVALID_COORDINATES = 10
-LAND_FILTER = 11
-DAYTIME_FILTER = 12
-CONUS_FILTER = 13
-ANCILLARY_SERVER_UNREACHABLE = 14
-ANCILLARY_LATENCY = 15
-DOWNLOAD_FAILED = 16
-BLANK_OUTPUT = 17
-PRODUCT_WRITE_FAILED = 18
-
-
-class ECOSTRESSExitCodeException(Exception):
-    """
-    This is the base class for all ECOSTRESS exceptions with an exit code.
-    """
-    exit_code = UNCLASSIFIED_FAILURE_EXIT_CODE
-
-
-class RunConfigFilenameNotSupplied(ECOSTRESSExitCodeException):
-    """
-    Run config filename argument not supplied in PGE call
-    """
-    exit_code = RUNCONFIG_FILENAME_NOT_SUPPLIED
-
-
-class UnableToOpenRunConfig(ECOSTRESSExitCodeException):
-    """
-    Unable to open run config file
-    """
-    exit_code = UNABLE_TO_OPEN_RUNCONFIG_FILE
-
-
-class UnableToParseRunConfig(ECOSTRESSExitCodeException):
-    """
-    Unable to parse run config file
-    """
-    exit_code = UNABLE_TO_PARSE_RUNCONFIG_FILE
-
-
-class CorruptedRunConfigStructure(ECOSTRESSExitCodeException):
-    """
-    Structure of run config data is corrupted
-    """
-    exit_code = CORRUPTED_RUNCONFIG_STRUCTURE
-
-
-class MissingRunConfigValue(ECOSTRESSExitCodeException):
-    """
-    Missing value in run config file
-    """
-    exit_code = MISSING_RUNCONFIG_VALUE
-
-
-class FilesystemInaccessible(ECOSTRESSExitCodeException):
-    """
-    Unable to access directory listed in StaticAncillaryFileGroup
-    """
-    exit_code = FILESYSTEM_INACCESSIBLE
-
-
-class InputFilesInaccessible(ECOSTRESSExitCodeException):
-    """
-    Unable to access input product files listed in InputFileGroup
-    """
-    exit_code = INPUT_FILES_INACCESSIBLE
-
-
-class UncalibratedGeolocation(ECOSTRESSExitCodeException):
-    """
-    ECOSTRESS scene rejected because L1B GEO file set OrbitCorrectionPerformed to false
-    """
-    exit_code = UNCALIBRATED_GEOLOCATION
-
-
-class InvalidCoordinates(ECOSTRESSExitCodeException):
-    """
-    ECOSTRESS scene rejected because L1B GEO geolocation arrays contain coordinates outside the valid range of -90 to 90 latitude, -180 to 180 longitude, or the range of either exceeds 10 degrees
-    """
-    exit_code = INVALID_COORDINATES
-
-
-class LandFilter(ECOSTRESSExitCodeException):
-    """
-    ECOSTRESS scene rejected because L1B metadata reports no land pixels covered
-    """
-    exit_code = LAND_FILTER
-
-
-class DaytimeFilter(ECOSTRESSExitCodeException):
-    """
-    ECOSTRESS scene rejected because StandardMetadata/DayNightFlag attribute in the L2T_LSTE input product contains a value other than Day.
-    """
-    exit_code = DAYTIME_FILTER
-
-
-class CONUSFilter(ECOSTRESSExitCodeException):
-    """
-    ECOSTRESS scene rejected the granule does not cover CONUS. In the case that an ECOSTRESS Orbit/Scene granule is on the edge of the CONUS boundary, some of the the L3T_L4T_ALEXI tiles may succeed while others return this exit code. The tiles that do succeed can still be mosaicked by L3G_L4G_ALEXI.
-    """
-    exit_code = CONUS_FILTER
-
-
-class AncillaryServerUnreachable(ECOSTRESSExitCodeException):
-    """
-    This exit code reports that a connection could not be made to one of the remote servers hosting ancillary data. Sometimes these servers are down for maintenance for a few hours at a time.
-    """
-    exit_code = ANCILLARY_SERVER_UNREACHABLE
-
-
-class AncillaryLatency(ECOSTRESSExitCodeException):
-    """
-    This exit code reports that a required granule from an ancillary data source is not yet available.
-    """
-    exit_code = ANCILLARY_LATENCY
-
-
-class DownloadFailed(ECOSTRESSExitCodeException):
-    """
-    This exit code reports that the file transfer for an ancillary file from the remote server to the local filesystem failed. This can happen intermittently, but if it happens persistently, then the security or API of the remote server may have made a breaking change.
-    """
-    exit_code = DOWNLOAD_FAILED
-
-
-class BlankOutput(ECOSTRESSExitCodeException):
-    """
-    This exit code reports that the output images contained only no-data values and were not written to a product file.
-    """
-    exit_code = BLANK_OUTPUT
-
-
-class ProductWriteFailed(ECOSTRESSExitCodeException):
-    """
-    This exit code reports that the PGE was unable to write its product file.
-    """
-    exit_code = PRODUCT_WRITE_FAILED
-</file>
-
-<file path="ECOv002_L2T_STARS/L2T_STARS.xml">
-<?xml version="1.0" encoding="UTF-8"?>
-<input xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-       xmlns:xalan="http://xml.apache.org/xslt"
-       xmlns:cas="http://oodt.jpl.nasa.gov/1.0/cas"
-       xsi:noNamespaceSchemaLocation="">
-    <group name="LogMetadata">
-        <vector name="CommandLineParameters">
-            <element>executable_filename</element>
-            <element>runconfig_filename</element>
-            <element>log_filename</element>
-        </vector>
-    </group>
-    <group name="JobIdentification">
-        <scalar name="ProductionLocation">ECOSTRESS Science Computing Facility</scalar>
-        <scalar name="TaskId">urn:ecostress:L2GL2TLSTETask</scalar>
-        <scalar name="ProcessingNode">processing_node</scalar>
-        <scalar name="ProductionDateTime">production_datetime</scalar>
-        <scalar name="JobId">job_ID</scalar>
-        <scalar name="WorkflowInstanceId">instance_ID</scalar>
-    </group>
-    <group name="InputFileGroup">
-        <scalar name="L2T_LSTE">L2T_LSTE_filename</scalar>
-        <scalar name="L2T_STARS_PRIOR">prior_L2T_STARS_filename</scalar>
-    </group>
-    <group name="StaticAncillaryFileGroup">
-        <scalar name="L2T_STARS_MODEL">model_directory</scalar>
-        <scalar name="L2T_STARS_INDICES">indices_directory</scalar>
-        <scalar name="L2T_STARS_SOURCES">sources_directory</scalar>
-        <scalar name="L2T_STARS_WORKING">working_directory</scalar>
-    </group>
-    <group name="PrimaryExecutable">
-        <scalar name="BuildID">build_ID</scalar>
-        <scalar name="FullPathname">executable_filename</scalar>
-    </group>
-    <group name="Geometry">
-        <scalar name="TileId">tile_ID</scalar>
-        <scalar name="SceneId">scene_ID</scalar>
-        <scalar name="OrbitNumber">orbit_number</scalar>
-    </group>
-    <group name="ProductPathGroup">
-        <scalar name="ProductCounter">product_counter</scalar>
-        <scalar name="ProductPath">output_directory</scalar>
-    </group>
-    <group name="PGENameGroup">
-        <scalar name="PGEName">L2T_STARS_PGE</scalar>
-    </group>
-</input>
-</file>
-
-<file path="ECOv002_L2T_STARS/PGEVersion.py">
-from os.path import join, abspath, dirname
-
-with open(join(abspath(dirname(__file__)), 'PGEVersion.txt')) as f:
-    PGEVersion = f.read().strip()
-</file>
-
-<file path="ECOv002_L2T_STARS/PGEVersion.txt">
-v1.13.1
+<file path="stars_rust_pyo3_translation_development_notes.md">
+# Development Notes: Translating the Julia STARS Data Fusion Pipeline to Rust/PyO3
+
+## 1. Executive Summary & Motivation
+
+The consolidated, pruned Julia script (`process_ECOSTRESS_data_fusion.jl`) establishes a self-contained mathematical specification for the Spatial and Temporal Adaptive Reflection Fusion Model (STARS) used in the ECOSTRESS Collection 2 pipeline. While pruning dead code and inlining dependencies removed external package fragility (`STARS.jl`, `GeoDataFrames`, `sentinel2.geojson`), each Julia invocation still incurs **~110–130 seconds of startup and JIT compilation overhead** per product (`~220–260 seconds` per granule across `NDVI` and `albedo`), while actual compute takes only ~23 seconds (NDVI) and ~52 seconds (albedo) on 8 threads.
+
+Translating the core fusion engine into a **PyO3 / Rust extension module** (`stars_fusion`) built with `maturin` eliminates JIT compilation latency entirely, removes subprocess spawning and intermediate GeoTIFF serialization overhead from `L2T_STARS.py`, and provides deterministic multithreading via `rayon`.
+
+---
+
+## 2. Target Crate & Package Architecture
+
+### 2.1 Directory Layout
+```text
+stars_fusion/
+├── Cargo.toml
+├── pyproject.toml
+├── src/
+│   ├── lib.rs            # PyO3 module bindings & NumPy array conversions
+│   ├── covariance.rs     # Matérn-3/2 kernel, compute_n_eff, fast_var_est
+│   ├── grid.rs           # Coordinate axes, bounding boxes, window slicing, & stitching
+│   ├── obs_operator.rs   # Uniform spatial aggregation matrix (H)
+│   └── kalman.rs         # Forward Kalman filter step & moving-window execution
+└── python/
+    └── stars_fusion/
+        ├── __init__.py   # Re-exports Rust functions + optional rasterio CLI wrapper
+        └── cli.py        # Drop-in replacement for process_ECOSTRESS_data_fusion.jl
+```
+
+### 2.2 Recommended Rust Crates (`Cargo.toml`)
+* **`pyo3` (`0.22+`, feature `extension-module`)**: Exposes Rust functions directly as Python callables.
+* **`numpy` (`0.22+`)**: Zero-copy `PyReadonlyArray2`/`PyReadonlyArray3` views into NumPy arrays and `PyArray2` outputs.
+* **`ndarray` (`0.16+`)**: N-dimensional array slicing and views for `(row, col, time)` data cubes.
+* **`faer` (`0.19+`) or `nalgebra` (`0.33+`)**: Pure-Rust dense linear algebra with fast Cholesky (`LLT`) factorization and triangular solves without external OpenBLAS/LAPACK linking issues across macOS ARM64 and Linux containers.
+* **`rayon` (`1.10+`)**: Work-stealing thread pool for parallelizing the independent coarse-pixel moving windows.
+
+### 2.3 Build Configuration (`pyproject.toml`)
+* Build backend: `maturin` (`build-backend = "maturin"`), allowing standard `pip install .` or `maturin develop --release` inside the `ECOSTRESS` mamba environment.
+* Set `RUSTFLAGS="-C target-cpu=native"` for local builds or standard baseline targets (`x86-64-v3` / `aarch64-apple-darwin`) for portable wheels.
+
+---
+
+## 3. Mathematical & Algorithmic Specification
+
+To maintain bit-for-bit / machine-epsilon parity (`MAE ~ 1e-12`, `r = 1.000000`) with the verified Julia reference outputs, the Rust implementation must preserve the exact floating-point (`f64`) equations and indexing conventions below.
+
+### 3.1 Coordinate Conventions & Memory Layout
+* **Julia vs. NumPy/Rust Axis Order:**
+  * In `Rasters.jl`, GeoTIFFs are loaded in `(X, Y)` order (`dims(ref, X)` has length `x_size` = columns/easting, `dims(ref, Y)` has length `y_size` = rows/northing).
+  * In Python/NumPy (`rasterio`), arrays are `(row, col)` = `(Y, X)`.
+  * **Convention Recommendation:** Standardize the Rust API on standard NumPy `(Y, X)` or `(T, Y, X)` layout, and explicitly pass the 1D coordinate vectors `x_coords: &[f64]` (easting, ascending) and `y_coords: &[f64]` (northing, descending) along with `cell_width: f64` (`> 0`) and `cell_height: f64` (`< 0`, or positive magnitude `dy = |cell_height|`).
+* **Pixel Interval Semantics (`Intervals(Start())`):**
+  * Each grid coordinate $x_i$ represents the **top-left (west/north) corner** of the cell, NOT the cell center.
+  * Cell bounds for index $(r, c)$:
+    * $x \in [x_c, x_c + \Delta x]$
+    * $y \in [y_r - \Delta y, y_r]$ (where $\Delta y > 0$ is the positive vertical cell size).
+  * This corner-referenced convention is critical when computing `target_bbox`, `window_bbox`, and `unif_weighted_obs_operator`.
+
+### 3.2 Spatial Innovation Variance Estimation (`compute_n_eff` & `fast_var_est`)
+1. **Effective Sample Size (`compute_n_eff`):**
+   * Parameters: `agg_scale = round(coarse_cell_size / fine_cell_size)` (`7` for NDVI 490m/70m; `14` for albedo 980m/70m), `range = 2.0`, `smoothness = 1.5`.
+   * Construct an `agg_scale × agg_scale` grid of integer coordinates $(i, j) \in \{1, \dots, \text{agg\_scale}\}^2$ (`N = agg_scale^2` points).
+   * Compute the $N \times N$ Matérn-3/2 correlation matrix $C$ with nugget `reg = 1e-16` and length scale $\sigma = 2.0$:
+     $$C_{ab} = \left(1 + \frac{\sqrt{3} r_{ab}}{\sigma}\right) \exp\left(-\frac{\sqrt{3} r_{ab}}{\sigma}\right) + \text{reg} \cdot \delta_{ab}$$
+     where $r_{ab} = \sqrt{(x_a - x_b)^2 + (y_a - y_b)^2}$.
+   * Return:
+     $$n_{\text{eff}} = \frac{\text{agg\_scale}^4}{\sum_{a=1}^N \sum_{b=1}^N C_{ab}}$$
+
+2. **Pixel-Wise Temporal Difference Variance (`fast_var_est`):**
+   * Input: `coarse_images` of shape `(n_cov_times, y_coarse, x_coarse)` (default 8 daily VIIRS steps).
+   * For each coarse pixel $(r, c)$:
+     * Count valid (non-`NaN`) observations across time: $n_{\text{obs}} = \sum_{t=1}^{T_{\text{cov}}} \mathbb{I}(\neg\text{isnan}(z_t))$.
+     * If $n_{\text{obs}} < 8$ (`min_num_obs = 8`), set $\sigma^2_{\text{sp}}(r, c) = 10^{-4}$ (`default_var = 1e-4`).
+     * Otherwise, compute first differences along time: $d_t = z_{t+1} - z_t$ for $t = 1, \dots, T_{\text{cov}} - 1$.
+     * Filter out `NaN` values from $\{d_t\}$, compute sample variance (with Bessel's correction, denominator $m - 1$), and multiply by $n_{\text{eff}}$:
+       $$\sigma^2_{\text{sp}}(r, c) = \text{Var}_{\text{sample}}(\{d_t : \neg\text{isnan}(d_t)\}) \cdot n_{\text{eff}}$$
+   * Covariance parameter vector for coarse cell $(r, c)$:
+     $$\theta(r, c) = [\sigma^2_{\text{sp}}(r, c),\; \sigma = 200.0,\; \text{nugget} = 10^{-10},\; \nu = 1.5]$$
+
+### 3.3 Moving-Window Geometry & Bounds
+For each coarse cell $(r_c, c_c)$ in the tile:
+1. **Target Bounding Box (`target_bbox`):**
+   * Start with the coarse cell extent $[x_{\min}, x_{\max}] \times [y_{\min}, y_{\max}]$.
+   * Expand by `fine_cell_width` (`70.0` m) on all four sides:
+     $$\text{target\_bbox} = [x_{\min} - \Delta x_{\text{fine}},\; x_{\max} + \Delta x_{\text{fine}}] \times [y_{\min} - \Delta y_{\text{fine}},\; y_{\max} + \Delta y_{\text{fine}}]$$
+2. **Window Bounding Box (`window_bbox`):**
+   * Expand `target_bbox` by `buffer_distance` (`100.0` m) on all four sides:
+     $$\text{window\_bbox} = [\text{target\_bbox}.x_{\min} - 100.0,\; \text{target\_bbox}.x_{\max} + 100.0] \times [\text{target\_bbox}.y_{\min} - 100.0,\; \text{target\_bbox}.y_{\max} + 100.0]$$
+3. **Subsetting Pixels (`Rasters.Between`):**
+   * A pixel belongs to a bounding box if its **cell interval** overlaps/falls within the bounding box interval (matching `DimensionalData` `Between` on `Intervals(Start())` lookups: cell $[x_i, x_i + \Delta x]$ is selected when $x_i \ge \text{bbox}.x_{\min}$ and $x_i + \Delta x \le \text{bbox}.x_{\max}$, or verify boundary inclusivity against `test_ECOSTRESS_data_fusion.py`).
+   * *Note on typical window dimensions (interior tile pixel):*
+     * **NDVI (`490m` coarse / `70m` fine, `170m` total pad):**
+       * `target_bbox` width = $490 + 140 = 630\text{ m}$ ($9 \times 9$ fine pixels = $81$).
+       * `window_bbox` width = $490 + 340 = 830\text{ m}$ ($3 \times 3$ coarse pixels = $9$; $\sim 11 \times 11$ to $13 \times 13$ fine pixels $\approx 121\text{–}169$).
+       * State vector dimension: $n_{\text{state}} = 9 + 144 = 153$.
+     * **Albedo (`980m` coarse / `70m` fine, `170m` total pad):**
+       * `window_bbox` width = $980 + 340 = 1320\text{ m}$ ($3 \times 3$ coarse pixels = $9$; $\sim 19 \times 19$ fine pixels $= 361$).
+       * State vector dimension: $n_{\text{state}} = 9 + 361 = 370$.
+   * **Important Optimization Opportunity:** For all interior coarse pixels where the window does not clip the tile boundary, the relative geometry (`H`, `matern32_cor`, `F`, and the `ar_vars` block of `Q`) is **identical** up to scalar multiplication by $\sigma^2_{\text{sp}}(r_c, c_c)$! Caching the template `H` and unit-variance Matérn correlation matrix $C_0$ per window shape `(n_coarse_rows, n_coarse_cols, n_fine_rows, n_fine_cols)` eliminates >99% of pairwise distance and `exp()` evaluations.
+
+### 3.4 Observation Operator (`unif_weighted_obs_operator`)
+Given sensor grid top-left coordinates $(s_x, s_y)$ with cell size $(w_s, h_s)$ ($w_s, h_s > 0$) and target fine grid top-left coordinates $(t_x, t_y)$ with cell size $(w_t, h_t)$ ($w_t, h_t > 0$):
+* Center-to-center distance threshold:
+  $$d_{1, ij} = \left| \left(s_{x,i} + \frac{w_s}{2}\right) - \left(t_{x,j} + \frac{w_t}{2}\right) \right| \le \frac{w_s}{2}$$
+  $$d_{2, ij} = \left| \left(s_{y,i} - \frac{h_s}{2}\right) - \left(t_{y,j} - \frac{h_t}{2}\right) \right| \le \frac{h_s}{2}$$
+  *(Note: In Julia, `cell_height` is negative, so `sensor[:, 2] .+ sensor_res[2] / 2` subtracts half the positive cell height).*
+* Binary indicator $B_{ij} = d_{1,ij} \land d_{2,ij}$, row-normalized:
+  $$H_{ij} = \frac{B_{ij}}{\sum_{k} B_{ik}}$$
+* Stack coarse and fine observation matrices vertically:
+  $$H_{\text{obs}} = \begin{bmatrix} H_{\text{coarse}} \\ H_{\text{fine}} \end{bmatrix} \in \mathbb{R}^{(n_c + n_f) \times n_f}$$
+* Prepend the coarse additive bias identity block ($n_{\text{bias}} = n_c$, since `offset_ar = [1.0, 0.0]`):
+  $$H = \begin{bmatrix} I_{n_c} & H_{\text{coarse}} \\ 0_{n_f \times n_c} & H_{\text{fine}} \end{bmatrix} \in \mathbb{R}^{(n_c + n_f) \times (n_c + n_f)}$$
+
+### 3.5 State-Space Model & Forward Kalman Filter (`STARS_fusion_step`)
+* **State vector ($x \in \mathbb{R}^{n_c + n_f}$):**
+  $$x_0 = \begin{bmatrix} \mu_{\text{bias, prior}} \\ \mu_{\text{fine, prior}} \end{bmatrix}, \quad P_0 = \text{Diag}\left(\begin{bmatrix} \sigma^2_{\text{bias, prior}} \\ \sigma^2_{\text{fine, prior}} \end{bmatrix}\right)$$
+  *(Default priors when `prior` is `None`: $\mu_{\text{fine}} = 0.3$, $\sigma_{\text{fine}} = 0.01$, $\mu_{\text{bias}} = 0.0$, $\sigma_{\text{bias}} = 10^{-5}$).*
+* **Transition & Process Noise Matrices:**
+  * With `offset_ar = [1.0, 0.0]` and `offset_var = [1e-5, 1e-5]`:
+    $$F = I_{n_c + n_f}$$
+    $$Q = \begin{bmatrix} 10^{-5} I_{n_c} & 0 \\ 0 & \sigma^2_{\text{sp}} C_{\text{Matérn-3/2}} \end{bmatrix}$$
+* **Observation Noise Variances:**
+  * `coarse_err_var = 1e-6`, `fine_err_var = 1e-6`.
+* **Time Loop ($t = 1, \dots, T_{\text{target}}$):**
+  1. **Predict:**
+     $$x_{\text{pred}} = F x_{\text{filt}} = x_{\text{filt}}$$
+     $$P_{\text{pred}} = F P_{\text{filt}} F^\top + Q = P_{\text{filt}} + Q$$
+  2. **Mask Missing Observations:**
+     * Let $\mathcal{M}_t = \{i : \neg\text{isnan}(y_{i,t})\}$.
+     * If $|\mathcal{M}_t| == 0$, set $x_{\text{filt}} = x_{\text{pred}}, P_{\text{filt}} = P_{\text{pred}}$ and continue.
+  3. **Update (Cholesky Solve):**
+     * Subset rows $H_t = H[\mathcal{M}_t, :]$, $y_t = y[\mathcal{M}_t, t]$, $R_t = \text{Diag}(\text{err\_vars}[\mathcal{M}_t, t])$.
+     * Innovation: $r_t = y_t - H_t x_{\text{pred}}$.
+     * Cross-covariance: $A = P_{\text{pred}} H_t^\top \in \mathbb{R}^{(n_c + n_f) \times |\mathcal{M}_t|}$.
+     * Innovation covariance: $S = H_t A + R_t \in \mathbb{R}^{|\mathcal{M}_t| \times |\mathcal{M}_t|}$ (symmetric positive definite).
+     * Compute Cholesky factorization $S = U^\top U$ (or $L L^\top$).
+     * Solve $K = A S^{-1}$ via triangular solve (`K = (S \ A')'`) rather than explicit matrix inversion for superior numerical stability and speed.
+     * Posterior mean & covariance:
+       $$x_{\text{filt}} = x_{\text{pred}} + K r_t$$
+       $$P_{\text{filt}} = P_{\text{pred}} - K A^\top$$
+* **Outputs at $t = T_{\text{target}}$:**
+  * `bias_mean` = $x_{\text{filt}}[0 : n_c]$
+  * `fine_mean` = $x_{\text{filt}}[n_c : n_c + n_f]$
+  * `bias_sd` = $\sqrt{\text{diag}(P_{\text{filt}})[0 : n_c]}$
+  * `fine_sd` = $\sqrt{\text{diag}(P_{\text{filt}})[n_c : n_c + n_f]}$
+
+### 3.6 Tile Stitching Order (`coarse_fine_data_fusion`)
+* Parallelize the Kalman filter loop across all $N_{\text{coarse}} = \text{coarse\_rows} \times \text{coarse\_cols}$ windows using `rayon::par_iter()`, storing per-window results in a pre-allocated `Vec<WindowResult>`.
+* Stitch sequentially in **column-major order** (`for row in 0..coarse_rows { for col in 0..coarse_cols { ... } }` matching Julia's `m1` ordering):
+  * Write values falling inside `target_bbox` into the output grids **only where the output pixel is currently `NaN`** (`if out[r, c].is_nan() { out[r, c] = win_val }`).
+  * Because `target_bbox` expands each coarse cell by `fine_cell_width` (1 fine pixel overlap on each edge), adjacent windows overlap by 2 fine pixels; writing only to `NaN` cells reproduces Julia's `inds = isnan.(subset); subset[inds] = resampled_subset[inds]` exact tie-breaking behavior.
+
+---
+
+## 4. Proposed Python/Rust API Surface
+
+```python
+import numpy as np
+import stars_fusion
+
+# 1. Compute effective sample size
+n_eff: float = stars_fusion.compute_n_eff(
+    agg_scale=7,
+    range_m=2.0,
+    smoothness=1.5,
+)
+
+# 2. Estimate spatial innovation variance (2D float64 array: coarse_rows x coarse_cols)
+sp_var: np.ndarray = stars_fusion.fast_var_est(
+    coarse_images,       # shape: (n_cov_dates, coarse_rows, coarse_cols), float64
+    n_eff_agg=n_eff,
+    min_num_obs=8,
+    default_var=1e-4,
+)
+
+# 3. Run moving-window Kalman filter data fusion
+mean, sd, mean_bias, sd_bias = stars_fusion.coarse_fine_data_fusion(
+    coarse_images=coarse_images,       # (n_dates, coarse_rows, coarse_cols), float64
+    fine_images=fine_images,           # (n_dates, fine_rows, fine_cols), float64
+    x_coarse=x_coarse,                 # (coarse_cols,), float64 (top-left easting)
+    y_coarse=y_coarse,                 # (coarse_rows,), float64 (top-left northing)
+    x_fine=x_fine,                     # (fine_cols,), float64 (top-left easting)
+    y_fine=y_fine,                     # (fine_rows,), float64 (top-left northing)
+    coarse_cell_size=490.0,
+    fine_cell_size=70.0,
+    sp_var=sp_var,                     # (coarse_rows, coarse_cols), float64
+    prior_mean=prior_mean,             # Optional[(fine_rows, fine_cols)], float64
+    prior_sd=prior_sd,                 # Optional[(fine_rows, fine_cols)], float64
+    prior_bias_mean=prior_bias_mean,   # Optional[(coarse_rows, coarse_cols)], float64
+    prior_bias_sd=prior_bias_sd,     # Optional[(coarse_rows, coarse_cols)], float64
+    target_time_index=-1,              # Default: last timestep
+    buffer_distance=100.0,
+    coarse_err_var=1e-6,
+    fine_err_var=1e-6,
+    offset_ar=1.0,
+    offset_var=1e-5,
+)
+```
+
+---
+
+## 5. Verification & Rollout Checklist
+
+1. **Unit Tests (`cargo test`):**
+   * Verify `compute_n_eff(7, 2.0, 1.5)` and `compute_n_eff(14, 2.0, 1.5)` match Julia to `1e-15`.
+   * Verify `unif_weighted_obs_operator` row sums equal `1.0` and boundary inclusions match Julia's `Between` logic on both interior and edge windows.
+   * Verify single-window `kalman_filter_step` against Julia with all-NaN observations, partial-NaN observations, and full observations.
+2. **End-to-End Regression (`test_ECOSTRESS_data_fusion.py`):**
+   * Add `--backend rust` to `test_ECOSTRESS_data_fusion.py` invoking `python -m stars_fusion.cli` with the exact same CLI positional arguments as `process_ECOSTRESS_data_fusion.jl`.
+   * Confirm `Overall result: PASS` across all 8 layers (`NDVI` and `albedo` posterior mean, UQ, bias, and bias UQ) on tile `11SPS` against `~/data/STARS_julia_isolated_test_bundle/reference_outputs`.
+3. **Performance Target:**
+   * Expected wall-clock runtime on 8 threads (Apple M-series / Xeon): **~2–5 seconds** for `NDVI` and **~6–12 seconds** for `albedo` (down from `143.77s` and `92.35s` in Julia—a **~15–20× end-to-end speedup**).
+4. **Pipeline Integration (`L2T_STARS.py`):**
+   * Replace `subprocess.run(["julia", ...])` in `L2T_STARS.py` with direct in-memory calls to `stars_fusion.coarse_fine_data_fusion(...)`, eliminating intermediate GeoTIFF writes and removing Julia from the operational Docker container.
 </file>
 
 <file path="ECOv002_L2T_STARS/process_ECOSTRESS_data_fusion.jl">
@@ -7538,686 +8555,6 @@ ProgressMeter = "92933f4c-e287-5a05-a399-4b506db050ca"
 Rasters = "a3a2b9e3-a471-40c9-b274-f788e487c689"
 SparseArrays = "2f01184e-e22b-5df5-ae63-d93ebab69eaf"
 Statistics = "10745b16-79ce-11e8-11f9-7d13ad32a3b2"
-</file>
-
-<file path="ECOv002_L2T_STARS/runconfig.py">
-import logging
-from os.path import exists
-
-import untangle
-
-from .exit_codes import UnableToOpenRunConfig, UnableToParseRunConfig, ECOSTRESSExitCodeException
-
-logger = logging.getLogger(__name__)
-
-__author__ = 'Gregory Halverson'
-
-
-def parse_scalar(scalar):
-    return scalar.cdata
-
-
-def parse_vector(vector):
-    data = [
-        element.cdata
-        for element
-        in vector.children
-    ]
-
-    return data
-
-
-def parse_group(group):
-    result = {}
-
-    if hasattr(group, 'scalar'):
-        for element in group.scalar:
-            result[element['name']] = parse_scalar(element)
-
-    if hasattr(group, 'vector'):
-        for element in group.vector:
-            result[element['name']] = parse_vector(element)
-
-    if hasattr(group, 'group'):
-        for element in group.group:
-            result[element['name']] = parse_group(element)
-
-    return result
-
-
-def parse_runconfig(text: str) -> dict:
-    tree = untangle.parse(text)
-    config = parse_group(tree.input)
-
-    return config
-
-
-def read_runconfig(filename: str) -> dict:
-    if not exists(filename):
-        raise UnableToOpenRunConfig(f"run-config file does not exist: {filename}")
-
-    try:
-        tree = untangle.parse(filename)
-        config = parse_group(tree.input)
-    except ECOSTRESSExitCodeException as e:
-        raise e
-    except Exception as e:
-        logger.exception(e)
-        raise UnableToParseRunConfig(f"unable to parse run-config file: {filename}")
-
-    return config
-
-
-class ECOSTRESSRunConfig:
-    def read_runconfig(self, filename: str) -> dict:
-        return read_runconfig(filename)
-</file>
-
-<file path="ECOv002_L2T_STARS/version.py">
-from importlib.metadata import version
-
-__version__ = version("ecov002-l2t-stars")
-</file>
-
-<file path="tests/test_viirs_ecostress.py">
-from datetime import date
-from pathlib import Path
-
-import h5py
-import numpy as np
-import pytest
-from rasters import Raster
-from modland import generate_modland_grid
-
-from ECOv002_L2T_STARS.VIIRS.VIIRSDataPool import (
-    VIIRSGranule,
-    parse_VIIRS_build,
-    parse_VIIRS_date,
-    parse_VIIRS_product,
-    parse_VIIRS_tile,
-)
-from ECOv002_L2T_STARS.VIIRS.VNP09GA import VNP09GAGranule
-from ECOv002_L2T_STARS.VIIRS.VNP43IA4 import VNP43IA4, VNP43IA4Granule
-from ECOv002_L2T_STARS.VIIRS.VNP43MA3 import VNP43MA3, VNP43MA3Granule
-from ECOv002_L2T_STARS.VNP43NRT.VNP43NRT import VNP43NRTGranule
-
-
-def test_parse_viirs_helpers():
-    filename = "VNP43MA3.A2024345.h08v05.001.2024345.h5"
-
-    assert parse_VIIRS_product(filename) == "VNP43MA3"
-    assert parse_VIIRS_date(filename) == date(2024, 12, 10)
-    assert parse_VIIRS_tile(filename) == "h08v05"
-    assert parse_VIIRS_build(filename) == 1
-
-
-def test_viirs_granule_paths_and_metadata(tmp_path):
-    filename = tmp_path / "VNP43MA3.A2024345.h08v05.001.h5"
-    filename.write_bytes(b"")
-
-    granule = VIIRSGranule(
-        filename=str(filename),
-        working_directory=str(tmp_path),
-        products_directory=str(tmp_path / "products"),
-    )
-
-    assert granule.tile == "h08v05"
-    assert granule.h == 8
-    assert granule.v == 5
-    assert granule.date_UTC.date() == date(2024, 12, 10)
-    assert granule.product_directory("albedo") == str(tmp_path / "products" / "albedo" / "2024.12.10")
-    assert granule.product_filename("albedo").endswith("VNP43MA3.A2024345.h08v05.001_albedo.tif")
-
-
-def test_vnp43nrt_granule_tracks_expected_outputs(tmp_path):
-    granule_directory = tmp_path / "VNP43NRT_A2024345_h08v05"
-    granule_directory.mkdir()
-
-    required_files = [
-        "VNP43NRT_A2024345_h08v05_NDVI.tif",
-        "VNP43NRT_A2024345_h08v05_NBAR_I1.tif",
-        "VNP43NRT_A2024345_h08v05_NBAR_I2.tif",
-        "VNP43NRT_A2024345_h08v05_albedo.tif",
-        "VNP43NRT_A2024345_h08v05_BSA_M1.tif",
-        "VNP43NRT_A2024345_h08v05_WSA_M1.tif",
-        "VNP43NRT_A2024345_h08v05_BSA_M2.tif",
-        "VNP43NRT_A2024345_h08v05_WSA_M2.tif",
-        "VNP43NRT_A2024345_h08v05_BSA_M3.tif",
-        "VNP43NRT_A2024345_h08v05_WSA_M3.tif",
-        "VNP43NRT_A2024345_h08v05_BSA_M4.tif",
-        "VNP43NRT_A2024345_h08v05_WSA_M4.tif",
-        "VNP43NRT_A2024345_h08v05_BSA_M5.tif",
-        "VNP43NRT_A2024345_h08v05_WSA_M5.tif",
-        "VNP43NRT_A2024345_h08v05_BSA_M7.tif",
-        "VNP43NRT_A2024345_h08v05_WSA_M7.tif",
-        "VNP43NRT_A2024345_h08v05_BSA_M8.tif",
-        "VNP43NRT_A2024345_h08v05_WSA_M8.tif",
-        "VNP43NRT_A2024345_h08v05_BSA_M10.tif",
-        "VNP43NRT_A2024345_h08v05_WSA_M10.tif",
-        "VNP43NRT_A2024345_h08v05_BSA_M11.tif",
-        "VNP43NRT_A2024345_h08v05_WSA_M11.tif",
-    ]
-
-    for filename in required_files:
-        (granule_directory / filename).touch()
-
-    granule = VNP43NRTGranule(str(granule_directory))
-
-    assert granule.granule_ID == "VNP43NRT_A2024345_h08v05"
-    assert granule.tile == "h08v05"
-    assert granule.h == 8
-    assert granule.v == 5
-    assert granule.date_UTC.date() == date(2024, 12, 10)
-    assert granule.complete is True
-    assert granule.variable_filename("NDVI").endswith("VNP43NRT_A2024345_h08v05_NDVI.tif")
-
-
-def test_vnp09ga_cloud_mask_from_qf1(tmp_path):
-    filename = tmp_path / "VNP09GA.A2024345.h08v05.002.h5"
-
-    with h5py.File(filename, "w") as f:
-        dataset = f.create_dataset(
-            "HDFEOS/GRIDS/VIIRS_Grid_1km_2D/Data Fields/SurfReflect_QF1_1",
-            data=np.array([[0, 4], [0, 12]], dtype=np.uint16),
-            shape=(2, 2),
-        )
-        dataset.attrs["_FillValue"] = 65535
-
-    granule = VNP09GAGranule(
-        filename=str(filename),
-        working_directory=str(tmp_path),
-        products_directory=str(tmp_path / "products"),
-    )
-
-    mask = granule.get_cloud_mask(target_shape=(2, 2))
-
-    assert mask.shape == (2, 2)
-    assert np.asarray(mask).tolist() == [[False, True], [False, True]]
-
-
-def test_vnp43ia4_granule_reflectance_and_ndvi(tmp_path):
-    filename = tmp_path / "VNP43IA4.A2024345.h08v05.001.h5"
-
-    with h5py.File(filename, "w") as f:
-        red = f.create_dataset(
-            "HDFEOS/GRIDS/VIIRS_Grid_BRDF/Data Fields/Nadir_Reflectance_I1",
-            data=np.array([[100, 200], [300, 400]], dtype=np.uint16),
-        )
-        red.attrs["_FillValue"] = 32767
-
-        nir = f.create_dataset(
-            "HDFEOS/GRIDS/VIIRS_Grid_BRDF/Data Fields/Nadir_Reflectance_I2",
-            data=np.array([[200, 300], [400, 500]], dtype=np.uint16),
-        )
-        nir.attrs["_FillValue"] = 32767
-
-        qa = f.create_dataset(
-            "HDFEOS/GRIDS/VIIRS_Grid_BRDF/Data Fields/BRDF_Albedo_Band_Mandatory_Quality_I1",
-            data=np.array([[0, 0], [0, 0]], dtype=np.uint8),
-        )
-        qa.attrs["_FillValue"] = 255
-
-        qa_2 = f.create_dataset(
-            "HDFEOS/GRIDS/VIIRS_Grid_BRDF/Data Fields/BRDF_Albedo_Band_Mandatory_Quality_I2",
-            data=np.array([[0, 0], [0, 0]], dtype=np.uint8),
-        )
-        qa_2.attrs["_FillValue"] = 255
-
-    granule = VNP43IA4Granule(
-        filename=str(filename),
-        working_directory=str(tmp_path),
-        products_directory=str(tmp_path / "products"),
-    )
-
-    red_image = granule.reflectance(1, apply_QA=False, save_data=False)
-    nir_image = granule.reflectance(2, apply_QA=False, save_data=False)
-
-    assert np.allclose(np.asarray(red_image), np.array([[0.01, 0.02], [0.03, 0.04]]))
-    assert np.allclose(np.asarray(nir_image), np.array([[0.02, 0.03], [0.04, 0.05]]))
-    expected_ndvi = (np.asarray(nir_image) - np.asarray(red_image)) / (np.asarray(nir_image) + np.asarray(red_image))
-    assert np.allclose(np.asarray(granule.NDVI), expected_ndvi)
-
-
-def test_vnp43ia4_product_mosaics_tiles(monkeypatch, tmp_path):
-    geometry = generate_modland_grid(8, 5, 2)
-    source = Raster(np.ones((2, 2), dtype=float), geometry=geometry)
-
-    class DummyGranule:
-        def __init__(self):
-            self.albedo = source
-
-        def product(self, product):
-            return Raster(np.full((2, 2), 0.5, dtype=float), geometry=geometry)
-
-    monkeypatch.setattr("ECOv002_L2T_STARS.VIIRS.VNP43IA4.find_modland_tiles", lambda boundary: ["h08v05"])
-    monkeypatch.setattr(VNP43IA4, "granule", lambda self, date_UTC, tile, download_location=None, build=None: DummyGranule())
-
-    connection = VNP43IA4(working_directory=str(tmp_path))
-    result = connection.product("red", date_UTC=date(2024, 12, 10), geometry=geometry, save_data=False)
-
-    assert result.shape == (2, 2)
-    assert np.allclose(np.asarray(result), 0.5)
-
-
-def test_vnp43ma3_albedo_mosaic(monkeypatch, tmp_path):
-    geometry = generate_modland_grid(8, 5, 2)
-    source = Raster(np.full((2, 2), 0.25, dtype=float), geometry=geometry)
-
-    class DummyGranule:
-        @property
-        def albedo(self):
-            return source
-
-    monkeypatch.setattr("ECOv002_L2T_STARS.VIIRS.VNP43MA3.find_modland_tiles", lambda boundary: ["h08v05"])
-    monkeypatch.setattr(VNP43MA3, "granule", lambda self, date_UTC, tile, download_location=None, build=None: DummyGranule())
-    monkeypatch.setattr(Raster, "to_geometry", lambda self, geometry, resampling=None: Raster(np.full((2, 2), 0.25, dtype=float), geometry=geometry))
-
-    connection = VNP43MA3(working_directory=str(tmp_path))
-    result = connection.albedo(date_UTC=date(2024, 12, 10), geometry=geometry, filename=None)
-
-    assert result.shape == (2, 2)
-    assert np.allclose(np.asarray(result), 0.25)
-</file>
-
-<file path="compare.py">
-import glob
-import os
-import tempfile
-import zipfile
-import numpy as np
-import rasterio
-from ECOv002_granules import open_granule
-
-# ==========================================
-# CONFIGURATION: Update paths to your files
-# ==========================================
-LOCAL_PRODUCT_PATH = os.path.expanduser(
-    "~/data/ECOv002_testing/L2T_STARS_output/ECOv002_L2T_STARS_11SPS_20261027_0700_01"
-)
-DOWNLOADED_PRODUCT_PATH = os.path.expanduser(
-    "~/data/ECOv002_testing/ECOv002_L2T_STARS_11SPS_20261027_0713_01"
-)
-DIFF_OUTPUT_DIR = os.path.expanduser(
-    "~/data/ECOv002_testing/L2T_STARS_diff"
-)
-
-COMPARISON_VARIABLES = [
-    "NDVI",
-    "NDVI-UQ",
-    "albedo",
-    "albedo-UQ",
-]
-
-
-def resolve_granule_path(path: str, temp_root: str, label: str) -> str:
-    """Resolve a directory or extract a .zip into an isolated temp directory."""
-    if os.path.isdir(path):
-        return path
-
-    if path.endswith(".zip") and os.path.isfile(path):
-        extract_dir = os.path.join(temp_root, label)
-        os.makedirs(extract_dir, exist_ok=True)
-        with zipfile.ZipFile(path, "r") as z:
-            z.extractall(extract_dir)
-
-        root_tifs = glob.glob(os.path.join(extract_dir, "*.tif"))
-        if not root_tifs:
-            subfolders = [
-                os.path.join(extract_dir, d)
-                for d in os.listdir(extract_dir)
-                if os.path.isdir(os.path.join(extract_dir, d))
-            ]
-            if subfolders:
-                return subfolders[0]
-        return extract_dir
-
-    raise FileNotFoundError(f"Granule path not found: {path}")
-
-
-def get_template_profile(granule_dir: str, variable: str) -> dict:
-    """Read spatial metadata (CRS, transform, dimensions) from the source GeoTIFF."""
-    matches = glob.glob(os.path.join(granule_dir, f"*_{variable}.tif"))
-    if not matches:
-        raise FileNotFoundError(f"Template GeoTIFF not found for {variable} in {granule_dir}")
-    with rasterio.open(matches[0]) as src:
-        profile = src.profile.copy()
-    profile.update(
-        driver="GTiff",
-        dtype=rasterio.float32,
-        count=1,
-        nodata=np.nan,
-        compress="deflate",
-    )
-    return profile
-
-
-def write_diff_rasters(
-    local: np.ndarray,
-    downloaded: np.ndarray,
-    profile: dict,
-    output_dir: str,
-    granule_stem: str,
-    variable: str,
-) -> tuple[str, str]:
-    """Write signed difference (local - downloaded) and symmetric percent difference GeoTIFFs."""
-    os.makedirs(output_dir, exist_ok=True)
-
-    a = local.astype(np.float64)
-    b = downloaded.astype(np.float64)
-    valid = np.isfinite(a) & np.isfinite(b)
-
-    diff_grid = np.full(a.shape, np.nan, dtype=np.float32)
-    diff_grid[valid] = (a[valid] - b[valid]).astype(np.float32)
-
-    pct_diff_grid = np.full(a.shape, np.nan, dtype=np.float32)
-    denom = np.abs(a) + np.abs(b)
-    nonzero_valid = valid & (denom > 0)
-    pct_diff_grid[nonzero_valid] = (
-        200.0 * (a[nonzero_valid] - b[nonzero_valid]) / denom[nonzero_valid]
-    ).astype(np.float32)
-    pct_diff_grid[valid & (denom == 0)] = 0.0
-
-    diff_path = os.path.join(output_dir, f"{granule_stem}_{variable}_diff.tif")
-    pct_diff_path = os.path.join(output_dir, f"{granule_stem}_{variable}_pct_diff.tif")
-
-    with rasterio.open(diff_path, "w", **profile) as dst:
-        dst.write(diff_grid, 1)
-
-    with rasterio.open(pct_diff_path, "w", **profile) as dst:
-        dst.write(pct_diff_grid, 1)
-
-    return diff_path, pct_diff_path
-
-
-def compare_variable(local: np.ndarray, downloaded: np.ndarray) -> str:
-    if local.shape != downloaded.shape:
-        return f"shape mismatch: local {local.shape}, downloaded {downloaded.shape}"
-
-    local = local.astype(np.float64)
-    downloaded = downloaded.astype(np.float64)
-    local_nan = ~np.isfinite(local)
-    downloaded_nan = ~np.isfinite(downloaded)
-    valid = ~(local_nan | downloaded_nan)
-    nan_disagreement = int(np.count_nonzero(local_nan != downloaded_nan))
-
-    if not valid.any():
-        return f"no jointly valid pixels (NaN-mask disagreements: {nan_disagreement})"
-
-    a = local[valid]
-    b = downloaded[valid]
-    diff = a - b
-    identical = 100 * np.mean(a == b)
-    corr = np.corrcoef(a, b)[0, 1] if a.std() > 0 and b.std() > 0 else np.nan
-
-    # Symmetric percent difference (sMAPE): 200 * |a - b| / (|a| + |b|), excluding 0/0 pairs
-    denom = np.abs(a) + np.abs(b)
-    nonzero = denom > 0
-    sym_pct_diff = np.mean(200.0 * np.abs(diff[nonzero]) / denom[nonzero]) if nonzero.any() else 0.0
-
-    # Signed percent bias relative to downloaded reference mean
-    mean_b = b.mean()
-    pct_bias = 100.0 * diff.mean() / abs(mean_b) if mean_b != 0 else np.nan
-
-    return (
-        f"n={a.size}  NaN-mask disagreements={nan_disagreement}  identical={identical:.2f}%\n"
-        f"    mean local={a.mean():.6f}  mean downloaded={mean_b:.6f}  bias={diff.mean():.6f} ({pct_bias:+.2f}%)\n"
-        f"    MAE={np.abs(diff).mean():.6f}  RMSE={np.sqrt((diff ** 2).mean()):.6f}  "
-        f"max|diff|={np.abs(diff).max():.6f}  mean_pct_diff={sym_pct_diff:.2f}%  r={corr:.6f}"
-    )
-
-
-def main():
-    with tempfile.TemporaryDirectory(prefix="ecov002_compare_") as temp_root:
-        local_path = resolve_granule_path(LOCAL_PRODUCT_PATH, temp_root, "local")
-        downloaded_path = resolve_granule_path(DOWNLOADED_PRODUCT_PATH, temp_root, "downloaded")
-        granule_stem = os.path.basename(local_path.rstrip("/"))
-
-        print("Opening local experimental product:", local_path)
-        print("Opening downloaded reference product:", downloaded_path)
-        print("Writing difference rasters to:", DIFF_OUTPUT_DIR)
-
-        local_granule = open_granule(local_path)
-        downloaded_granule = open_granule(downloaded_path)
-
-        print("\n========================================")
-        print("Local vs Downloaded Product Comparison")
-        print("========================================")
-
-        for variable in COMPARISON_VARIABLES:
-            print(f"\nVariable: {variable}")
-            try:
-                local_data = np.array(local_granule.variable(variable))
-                downloaded_data = np.array(downloaded_granule.variable(variable))
-                print("  " + compare_variable(local_data, downloaded_data))
-
-                if local_data.shape == downloaded_data.shape:
-                    profile = get_template_profile(local_path, variable)
-                    diff_path, pct_diff_path = write_diff_rasters(
-                        local_data,
-                        downloaded_data,
-                        profile,
-                        DIFF_OUTPUT_DIR,
-                        granule_stem,
-                        variable,
-                    )
-                    print(f"    wrote: {os.path.basename(diff_path)}")
-                    print(f"    wrote: {os.path.basename(pct_diff_path)}")
-            except Exception as e:
-                print(f"  could not compare: {e}")
-
-
-if __name__ == "__main__":
-    main()
-</file>
-
-<file path="geos5fp.py">
-from GEOS5FP import GEOS5FP, FailedGEOS5FPDownload
-
-__all__ = ["GEOS5FP", "FailedGEOS5FPDownload"]
-</file>
-
-<file path="LICENSE">
-Apache License
-                           Version 2.0, January 2004
-                        http://www.apache.org/licenses/
-
-   TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
-
-   1. Definitions.
-
-      "License" shall mean the terms and conditions for use, reproduction,
-      and distribution as defined by Sections 1 through 9 of this document.
-
-      "Licensor" shall mean the copyright owner or entity authorized by
-      the copyright owner that is granting the License.
-
-      "Legal Entity" shall mean the union of the acting entity and all
-      other entities that control, are controlled by, or are under common
-      control with that entity. For the purposes of this definition,
-      "control" means (i) the power, direct or indirect, to cause the
-      direction or management of such entity, whether by contract or
-      otherwise, or (ii) ownership of fifty percent (50%) or more of the
-      outstanding shares, or (iii) beneficial ownership of such entity.
-
-      "You" (or "Your") shall mean an individual or Legal Entity
-      exercising permissions granted by this License.
-
-      "Source" form shall mean the preferred form for making modifications,
-      including but not limited to software source code, documentation
-      source, and configuration files.
-
-      "Object" form shall mean any form resulting from mechanical
-      transformation or translation of a Source form, including but
-      not limited to compiled object code, generated documentation,
-      and conversions to other media types.
-
-      "Work" shall mean the work of authorship, whether in Source or
-      Object form, made available under the License, as indicated by a
-      copyright notice that is included in or attached to the work
-      (an example is provided in the Appendix below).
-
-      "Derivative Works" shall mean any work, whether in Source or Object
-      form, that is based on (or derived from) the Work and for which the
-      editorial revisions, annotations, elaborations, or other modifications
-      represent, as a whole, an original work of authorship. For the purposes
-      of this License, Derivative Works shall not include works that remain
-      separable from, or merely link (or bind by name) to the interfaces of,
-      the Work and Derivative Works thereof.
-
-      "Contribution" shall mean any work of authorship, including
-      the original version of the Work and any modifications or additions
-      to that Work or Derivative Works thereof, that is intentionally
-      submitted to Licensor for inclusion in the Work by the copyright owner
-      or by an individual or Legal Entity authorized to submit on behalf of
-      the copyright owner. For the purposes of this definition, "submitted"
-      means any form of electronic, verbal, or written communication sent
-      to the Licensor or its representatives, including but not limited to
-      communication on electronic mailing lists, source code control systems,
-      and issue tracking systems that are managed by, or on behalf of, the
-      Licensor for the purpose of discussing and improving the Work, but
-      excluding communication that is conspicuously marked or otherwise
-      designated in writing by the copyright owner as "Not a Contribution."
-
-      "Contributor" shall mean Licensor and any individual or Legal Entity
-      on behalf of whom a Contribution has been received by Licensor and
-      subsequently incorporated within the Work.
-
-   2. Grant of Copyright License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      copyright license to reproduce, prepare Derivative Works of,
-      publicly display, publicly perform, sublicense, and distribute the
-      Work and such Derivative Works in Source or Object form.
-
-   3. Grant of Patent License. Subject to the terms and conditions of
-      this License, each Contributor hereby grants to You a perpetual,
-      worldwide, non-exclusive, no-charge, royalty-free, irrevocable
-      (except as stated in this section) patent license to make, have made,
-      use, offer to sell, sell, import, and otherwise transfer the Work,
-      where such license applies only to those patent claims licensable
-      by such Contributor that are necessarily infringed by their
-      Contribution(s) alone or by combination of their Contribution(s)
-      with the Work to which such Contribution(s) was submitted. If You
-      institute patent litigation against any entity (including a
-      cross-claim or counterclaim in a lawsuit) alleging that the Work
-      or a Contribution incorporated within the Work constitutes direct
-      or contributory patent infringement, then any patent licenses
-      granted to You under this License for that Work shall terminate
-      as of the date such litigation is filed.
-
-   4. Redistribution. You may reproduce and distribute copies of the
-      Work or Derivative Works thereof in any medium, with or without
-      modifications, and in Source or Object form, provided that You
-      meet the following conditions:
-
-      (a) You must give any other recipients of the Work or
-          Derivative Works a copy of this License; and
-
-      (b) You must cause any modified files to carry prominent notices
-          stating that You changed the files; and
-
-      (c) You must retain, in the Source form of any Derivative Works
-          that You distribute, all copyright, patent, trademark, and
-          attribution notices from the Source form of the Work,
-          excluding those notices that do not pertain to any part of
-          the Derivative Works; and
-
-      (d) If the Work includes a "NOTICE" text file as part of its
-          distribution, then any Derivative Works that You distribute must
-          include a readable copy of the attribution notices contained
-          within such NOTICE file, excluding those notices that do not
-          pertain to any part of the Derivative Works, in at least one
-          of the following places: within a NOTICE text file distributed
-          as part of the Derivative Works; within the Source form or
-          documentation, if provided along with the Derivative Works; or,
-          within a display generated by the Derivative Works, if and
-          wherever such third-party notices normally appear. The contents
-          of the NOTICE file are for informational purposes only and
-          do not modify the License. You may add Your own attribution
-          notices within Derivative Works that You distribute, alongside
-          or as an addendum to the NOTICE text from the Work, provided
-          that such additional attribution notices cannot be construed
-          as modifying the License.
-
-      You may add Your own copyright statement to Your modifications and
-      may provide additional or different license terms and conditions
-      for use, reproduction, or distribution of Your modifications, or
-      for any such Derivative Works as a whole, provided Your use,
-      reproduction, and distribution of the Work otherwise complies with
-      the conditions stated in this License.
-
-   5. Submission of Contributions. Unless You explicitly state otherwise,
-      any Contribution intentionally submitted for inclusion in the Work
-      by You to the Licensor shall be under the terms and conditions of
-      this License, without any additional terms or conditions.
-      Notwithstanding the above, nothing herein shall supersede or modify
-      the terms of any separate license agreement you may have executed
-      with Licensor regarding such Contributions.
-
-   6. Trademarks. This License does not grant permission to use the trade
-      names, trademarks, service marks, or product names of the Licensor,
-      except as required for reasonable and customary use in describing the
-      origin of the Work and reproducing the content of the NOTICE file.
-
-   7. Disclaimer of Warranty. Unless required by applicable law or
-      agreed to in writing, Licensor provides the Work (and each
-      Contributor provides its Contributions) on an "AS IS" BASIS,
-      WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or
-      implied, including, without limitation, any warranties or conditions
-      of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A
-      PARTICULAR PURPOSE. You are solely responsible for determining the
-      appropriateness of using or redistributing the Work and assume any
-      risks associated with Your exercise of permissions under this License.
-
-   8. Limitation of Liability. In no event and under no legal theory,
-      whether in tort (including negligence), contract, or otherwise,
-      unless required by applicable law (such as deliberate and grossly
-      negligent acts) or agreed to in writing, shall any Contributor be
-      liable to You for damages, including any direct, indirect, special,
-      incidental, or consequential damages of any character arising as a
-      result of this License or out of the use or inability to use the
-      Work (including but not limited to damages for loss of goodwill,
-      work stoppage, computer failure or malfunction, or any and all
-      other commercial damages or losses), even if such Contributor
-      has been advised of the possibility of such damages.
-
-   9. Accepting Warranty or Additional Liability. While redistributing
-      the Work or Derivative Works thereof, You may choose to offer,
-      and charge a fee for, acceptance of support, warranty, indemnity,
-      or other liability obligations and/or rights consistent with this
-      License. However, in accepting such obligations, You may act only
-      on Your own behalf and on Your sole responsibility, not on behalf
-      of any other Contributor, and only if You agree to indemnify,
-      defend, and hold each Contributor harmless for any liability
-      incurred by, or claims asserted against, such Contributor by reason
-      of your accepting any such warranty or additional liability.
-
-   END OF TERMS AND CONDITIONS
-
-   APPENDIX: How to apply the Apache License to your work.
-
-      To apply the Apache License to your work, attach the following
-      boilerplate notice, with the fields enclosed by brackets "[]"
-      replaced with your own identifying information. (Don't include
-      the brackets!)  The text should be enclosed in the appropriate
-      comment syntax for the file format. We also recommend that a
-      file or class name and description of purpose be included on the
-      same "printed page" as the copyright notice for easier
-      identification within third-party archives.
-
-   Copyright [yyyy] [name of copyright owner]
-
-   Licensed under the Apache License, Version 2.0 (the "License");
-   you may not use this file except in compliance with the License.
-   You may obtain a copy of the License at
-
-       http://www.apache.org/licenses/LICENSE-2.0
-
-   Unless required by applicable law or agreed to in writing, software
-   distributed under the License is distributed on an "AS IS" BASIS,
-   WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-   See the License for the specific language governing permissions and
-   limitations under the License.
 </file>
 
 <file path="makefile">
@@ -8898,6 +9235,9 @@ dependencies = [
 
 requires-python = ">=3.11"
 
+[project.scripts]
+L2T_STARS = "ECOv002_L2T_STARS.L2T_STARS:main"
+
 [project.optional-dependencies]
 dev = [
     "pytest>=6.0",
@@ -8905,13 +9245,13 @@ dev = [
 ]
 
 [tool.setuptools.package-data]
-ECOv002_L2T_STARS = ["*.txt"]
+ECOv002_L2T_STARS = ["*.txt", "*.xml", "*.jl", "Project.toml"]
 
 [project.urls]
-"Homepage" = "https://github.com/ECOSTRESS-Collection-2/ECOv002_L2T_STARS"
+"Homepage" = "https://github.com/ECOSTRESS-Collection-2/ECOv002-L2T-STARS"
 
 [tool.setuptools.packages.find]
-include = ["ECOv002_L2T_JET"]
+include = ["ECOv002_L2T_STARS*"]
 exclude = []
 </file>
 
